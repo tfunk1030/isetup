@@ -1,0 +1,28 @@
+---
+description: Guidance for upload flow, dashboard rendering, and PDF export changes
+globs: gtp-telemetry/src/App.tsx,gtp-telemetry/src/store/session-store.ts,gtp-telemetry/src/components/**/*.tsx,gtp-telemetry/src/lib/pdf-export.ts
+---
+
+# Dashboard and workflow guidance
+
+Use this rule when editing the upload flow, session state, dashboard panels, or PDF export.
+
+## Architecture
+
+- `src/store/session-store.ts` is the bridge between uploaded files and rendered analysis
+- `src/App.tsx` controls the upload-vs-dashboard state and lazy-loads most analysis panels
+- `src/components/dashboard/SessionHeader.tsx` owns export and "new IBT" actions
+- `src/lib/pdf-export.ts` is part of the user-visible output path
+
+## Editing guidance
+
+- Prefer adding or refining computed data in `src/lib/analysis-engine.ts` over scattering calculations across panels
+- Keep loading, error, and empty-state behavior intact when touching the upload pipeline
+- If a panel depends on optional analysis fields, guard for missing data instead of assuming every session has every channel
+- If dashboard content changes materially, check whether PDF output should change too
+
+## Review mindset
+
+- Look for unit drift between dashboard labels and exported reports
+- Watch for runtime regressions caused by missing telemetry channels
+- Preserve existing lazy-loaded boundaries unless there is a clear product reason to change them

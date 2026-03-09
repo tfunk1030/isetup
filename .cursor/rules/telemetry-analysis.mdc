@@ -1,0 +1,43 @@
+---
+description: Guidance for IBT parsing, analysis logic, and telemetry domain data
+globs: gtp-telemetry/src/lib/**/*.ts,gtp-telemetry/src/data/**/*.json
+---
+
+# Telemetry pipeline guidance
+
+Use this rule when working on IBT parsing, unit handling, analysis heuristics, or car/track data.
+
+## Parser guardrails
+
+- `gtp-telemetry/src/lib/ibt-parser.ts` is a browser-side parser that mirrors the standalone Python parser
+- Be conservative with `DataView` offsets, lengths, and endianness
+- Keep `TextDecoder('latin1')` unless you have verified a different encoding with real IBT files
+- Prefer clear validation failures for corrupt or truncated files over uncaught runtime exceptions
+
+## Analysis engine guardrails
+
+- `gtp-telemetry/src/lib/analysis-engine.ts` feeds many dashboard panels and the PDF export
+- Use `ANALYSIS_CHANNELS` from `types.ts` for channel loading and keep missing-channel behavior defensive
+- Favor graceful degradation when a non-critical channel is absent
+- Keep car-specific logic in `car-profiles.ts` and track-specific logic in `track-profiles.ts`
+
+## Units and thresholds
+
+- Raw telemetry units differ from UI-facing units
+- The current pipeline converts several values to display-ready units for downstream consumers
+- When touching conversions, update downstream assumptions consistently instead of moving conversion logic piecemeal
+- Keep threshold and status logic aligned with `gtp-telemetry/src/lib/constants.ts`
+
+Reference conversions used in the repo:
+
+- speed: `m/s -> km/h`
+- acceleration: `m/s^2 -> g`
+- pressure: `kPa -> PSI`
+- ride height / shock deflection: `m -> mm`
+- steering: `rad -> deg`
+
+## Domain references
+
+- Root `SKILL.md` contains the most complete setup-engineering context
+- Plugin references live in `iracing-gtp-engineer-plugin/skills/iracing-gtp-engineer/references/`
+- Keep TypeScript and Python parser expectations aligned when changing shared assumptions

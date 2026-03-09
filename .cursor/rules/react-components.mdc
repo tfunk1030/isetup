@@ -1,0 +1,26 @@
+---
+description: React component conventions for the telemetry dashboard and shared UI
+globs: gtp-telemetry/src/components/**/*.tsx
+---
+
+# React component guidance
+
+## Current component patterns
+
+- Components are written as named function exports
+- Shared UI primitives live in `gtp-telemetry/src/components/shared/`
+- Most dashboard panels accept `analysis: SessionAnalysis`
+- `SessionHeader` is an intentional exception: it reads state from the store and handles reload/export actions
+
+## Preferred dashboard conventions
+
+- Keep calculation-heavy logic in `analysis-engine.ts` instead of re-deriving data in UI components
+- Use `Card` for panel framing and `MetricRow` / `StatusBadge` for compact metric display
+- Reuse colors and thresholds from `gtp-telemetry/src/lib/constants.ts` rather than hardcoding new values in components
+- Guard optional analysis fields and channels; parsed sessions may not provide every metric
+
+## Import and structure expectations
+
+- Follow the import style already present in nearby files
+- Preserve lazy-loaded panel boundaries defined in `gtp-telemetry/src/App.tsx`
+- Keep shared components generic; telemetry-specific reasoning belongs in lib or dashboard-specific files
