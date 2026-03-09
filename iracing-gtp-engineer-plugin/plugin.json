@@ -1,0 +1,25 @@
+{
+  "name": "iracing-gtp-engineer",
+  "version": "1.0.0",
+  "description": "iRacing GTP Hypercar setup engineer — telemetry analysis, setup diagnosis, IBT parsing",
+  "skills": [
+    {
+      "name": "iracing-gtp-engineer",
+      "path": "skills/iracing-gtp-engineer"
+    }
+  ],
+  "commands": [
+    {
+      "name": "analyze-ibt",
+      "path": "commands/analyze-ibt.md"
+    },
+    {
+      "name": "diagnose",
+      "path": "commands/diagnose.md"
+    },
+    {
+      "name": "setup-compare",
+      "path": "commands/setup-compare.md"
+    }
+  ]
+}
