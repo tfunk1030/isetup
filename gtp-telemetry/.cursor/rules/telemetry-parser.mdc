@@ -1,0 +1,30 @@
+---
+description: Guidance for IBT parsing, telemetry extraction, and analysis changes
+globs: src/lib/ibt-parser.ts,src/lib/analysis-engine.ts,src/lib/car-profiles.ts,src/lib/track-profiles.ts,src/lib/types.ts,src/lib/constants.ts,src/data/**/*.json
+alwaysApply: false
+---
+
+# Telemetry parser and analysis guidance
+
+Use this rule when working on the telemetry pipeline or domain data.
+
+## Parser guardrails
+
+- Preserve the binary layout assumptions in `src/lib/ibt-parser.ts` unless you have a specific reason to change them.
+- Be careful with `DataView` offsets, lengths, and endianness.
+- Keep `TextDecoder('latin1')` for iRacing string decoding unless you have verified another encoding is correct.
+- Maintain defensive validation for corrupt, truncated, or malformed files.
+- Prefer returning clear user-facing errors instead of allowing runtime exceptions to escape.
+
+## Analysis guardrails
+
+- `src/lib/analysis-engine.ts` feeds many UI panels. Data shape changes can have wide downstream impact.
+- When adding a new metric, verify where it should surface in the dashboard.
+- If you change channel assumptions, consider how missing channels should degrade.
+- Favor graceful fallbacks over hard failures when a non-critical channel is absent.
+
+## Domain data
+
+- Car-specific quirks live in `src/data/car-quirks/`.
+- Track metadata and setup tendencies live in `src/data/tracks/`.
+- If you add or rename data files, update the related detection/import logic too.

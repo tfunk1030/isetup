@@ -1,0 +1,30 @@
+---
+description: Shared repo context and workflow expectations
+globs:
+alwaysApply: true
+---
+
+# GTP Telemetry repo overview
+
+- This repository is a browser-based telemetry analyzer for local iRacing `.ibt` files.
+- It is a client-only React/Vite application; do not assume a backend or HTTP API exists.
+- The main load pipeline is:
+  1. user uploads a file
+  2. `src/store/session-store.ts` validates and parses it
+  3. `src/lib/analysis-engine.ts` computes the analysis payload
+  4. dashboard components render charts and summary panels
+
+## Important files
+
+- `src/store/session-store.ts`: file loading, validation, and analysis orchestration
+- `src/lib/ibt-parser.ts`: IBT binary parsing and YAML session extraction
+- `src/lib/analysis-engine.ts`: core telemetry analysis pipeline
+- `src/components/dashboard/`: UI consumers of analysis output
+- `src/data/car-quirks/` and `src/data/tracks/`: domain-specific static data
+
+## Expectations
+
+- Prefer targeted, low-risk edits in the parser and analysis pipeline.
+- Keep runtime code browser-safe.
+- Run `npm run lint` and `npm run build` after meaningful changes.
+- If a change affects the UI, also do a browser smoke test when possible.
