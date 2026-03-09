@@ -97,21 +97,20 @@ function detectLaps(
 
   for (let i = 0; i < recordCount; i++) {
     const l = Math.floor(ch.Lap![i]);
-    if (!laps[l]) laps[l] = { samples: [], start: i, end: i, duration: 0, maxSpeed: 0, count: 0 };
-    laps[l].samples.push(i);
-    laps[l].end = i;
+    const spdKph = speedToKph(spd![i]);
+    const lap = laps[l];
+    if (!lap) {
+      laps[l] = { start: i, end: i, duration: 0, maxSpeed: spdKph, count: 1 };
+    } else {
+      lap.end = i;
+      lap.count++;
+      if (spdKph > lap.maxSpeed) lap.maxSpeed = spdKph;
+    }
   }
 
   for (const l in laps) {
-    const s = laps[l];
-    s.duration = ch.SessionTime![s.end] - ch.SessionTime![s.start];
-    s.count = s.samples.length;
-    let max = 0;
-    for (const i of s.samples) {
-      const v = speedToKph(spd![i]);
-      if (v > max) max = v;
-    }
-    s.maxSpeed = max;
+    const lap = laps[l];
+    lap.duration = ch.SessionTime![lap.end] - ch.SessionTime![lap.start];
   }
 
   // Valid lap window
@@ -126,13 +125,15 @@ function detectLaps(
     maxLap = trackLen > 10 ? 300 : trackLen > 3 ? 160 : 90;
   }
 
-  const validLaps = Object.keys(laps)
-    .filter((l) => {
-      const d = laps[Number(l)].duration;
-      return d > minLap && d < maxLap && laps[Number(l)].count > 100;
-    })
-    .map(Number)
-    .sort((a, b) => a - b);
+  const validLaps: number[] = [];
+  for (const lapNumStr of Object.keys(laps)) {
+    const lapNum = Number(lapNumStr);
+    const lap = laps[lapNum];
+    if (lap.duration > minLap && lap.duration < maxLap && lap.count > 100) {
+      validLaps.push(lapNum);
+    }
+  }
+  validLaps.sort((a, b) => a - b);
 
   return { laps, validLaps };
 }
@@ -140,11 +141,11 @@ function detectLaps(
 // We need a way to pass weekend info for track length fallback
 let parsed_weekendInfo_trackLength: unknown = '5.8';
 
-function avg(arr: Float64Array, indices: number[]): number {
-  if (indices.length === 0) return 0;
+function avgInRange(arr: Float64Array, start: number, end: number): number {
+  if (end < start) return 0;
   let sum = 0;
-  for (const i of indices) sum += arr[i];
-  return sum / indices.length;
+  for (let i = start; i <= end; i++) sum += arr[i];
+  return sum / (end - start + 1);
 }
 
 function analyzeTyreTemps(
@@ -153,8 +154,8 @@ function analyzeTyreTemps(
   validLaps: number[]
 ): TyreTempLap[] {
   return validLaps.map((l) => {
-    const s = laps[l].samples;
-    const late = s.slice(Math.floor(s.length / 2)); // Last 50% for stability
+    const lap = laps[l];
+    const lateStart = lap.start + Math.floor(lap.count / 2); // Last 50% for stability
 
     // CRITICAL: L/M/R to O/M/I mapping differs by side
     // Left tyres (LF, LR): tempL = Outer, tempM = Middle, tempR = Inner
@@ -162,24 +163,24 @@ function analyzeTyreTemps(
     return {
       lap: l,
       LF: {
-        O: ch.LFtempL ? avg(ch.LFtempL, late) : 0,
-        M: ch.LFtempM ? avg(ch.LFtempM, late) : 0,
-        I: ch.LFtempR ? avg(ch.LFtempR, late) : 0,
+        O: ch.LFtempL ? avgInRange(ch.LFtempL, lateStart, lap.end) : 0,
+        M: ch.LFtempM ? avgInRange(ch.LFtempM, lateStart, lap.end) : 0,
+        I: ch.LFtempR ? avgInRange(ch.LFtempR, lateStart, lap.end) : 0,
       },
       RF: {
-        O: ch.RFtempR ? avg(ch.RFtempR, late) : 0,
-        M: ch.RFtempM ? avg(ch.RFtempM, late) : 0,
-        I: ch.RFtempL ? avg(ch.RFtempL, late) : 0,
+        O: ch.RFtempR ? avgInRange(ch.RFtempR, lateStart, lap.end) : 0,
+        M: ch.RFtempM ? avgInRange(ch.RFtempM, lateStart, lap.end) : 0,
+        I: ch.RFtempL ? avgInRange(ch.RFtempL, lateStart, lap.end) : 0,
       },
       LR: {
-        O: ch.LRtempL ? avg(ch.LRtempL, late) : 0,
-        M: ch.LRtempM ? avg(ch.LRtempM, late) : 0,
-        I: ch.LRtempR ? avg(ch.LRtempR, late) : 0,
+        O: ch.LRtempL ? avgInRange(ch.LRtempL, lateStart, lap.end) : 0,
+        M: ch.LRtempM ? avgInRange(ch.LRtempM, lateStart, lap.end) : 0,
+        I: ch.LRtempR ? avgInRange(ch.LRtempR, lateStart, lap.end) : 0,
       },
       RR: {
-        O: ch.RRtempR ? avg(ch.RRtempR, late) : 0,
-        M: ch.RRtempM ? avg(ch.RRtempM, late) : 0,
-        I: ch.RRtempL ? avg(ch.RRtempL, late) : 0,
+        O: ch.RRtempR ? avgInRange(ch.RRtempR, lateStart, lap.end) : 0,
+        M: ch.RRtempM ? avgInRange(ch.RRtempM, lateStart, lap.end) : 0,
+        I: ch.RRtempL ? avgInRange(ch.RRtempL, lateStart, lap.end) : 0,
       },
     };
   });
@@ -191,13 +192,13 @@ function analyzeTyrePressures(
   validLaps: number[]
 ): TyrePressureLap[] {
   return validLaps.map((l) => {
-    const s = laps[l].samples;
+    const lap = laps[l];
     return {
       lap: l,
-      LF: ch.LFpressure ? pressureToPSI(avg(ch.LFpressure, s)) : 0,
-      RF: ch.RFpressure ? pressureToPSI(avg(ch.RFpressure, s)) : 0,
-      LR: ch.LRpressure ? pressureToPSI(avg(ch.LRpressure, s)) : 0,
-      RR: ch.RRpressure ? pressureToPSI(avg(ch.RRpressure, s)) : 0,
+      LF: ch.LFpressure ? pressureToPSI(avgInRange(ch.LFpressure, lap.start, lap.end)) : 0,
+      RF: ch.RFpressure ? pressureToPSI(avgInRange(ch.RFpressure, lap.start, lap.end)) : 0,
+      LR: ch.LRpressure ? pressureToPSI(avgInRange(ch.LRpressure, lap.start, lap.end)) : 0,
+      RR: ch.RRpressure ? pressureToPSI(avgInRange(ch.RRpressure, lap.start, lap.end)) : 0,
     };
   });
 }
@@ -214,8 +215,7 @@ function analyzeTyreWear(
   if (!hasWear) return [];
 
   return validLaps.map((l) => {
-    const s = laps[l].samples;
-    const lastIdx = s[s.length - 1];
+    const lastIdx = laps[l].end;
 
     const getWear = (name: string) => ch[name] ? ch[name]![lastIdx] * 100 : 100;
 
@@ -279,15 +279,28 @@ function analyzeBottoming(
   for (let i = 0; i < recordCount; i++) {
     if (!hiSpeedMask[i]) continue;
 
-    const corners = [
-      { name: 'LF', rh: ch.LFrideHeight![i] },
-      { name: 'RF', rh: ch.RFrideHeight![i] },
-      { name: 'LR', rh: ch.LRrideHeight![i] },
-      { name: 'RR', rh: ch.RRrideHeight![i] },
-    ];
+    const lf = ch.LFrideHeight![i];
+    const rf = ch.RFrideHeight![i];
+    const lr = ch.LRrideHeight![i];
+    const rr = ch.RRrideHeight![i];
 
-    const minRH = Math.min(...corners.map((c) => c.rh)) * 1000;
-    if (minRH <= ANALYSIS.BOTTOMING_THRESHOLD_MM) {
+    let worstCorner = 'LF';
+    let minRH = lf;
+    if (rf < minRH) {
+      minRH = rf;
+      worstCorner = 'RF';
+    }
+    if (lr < minRH) {
+      minRH = lr;
+      worstCorner = 'LR';
+    }
+    if (rr < minRH) {
+      minRH = rr;
+      worstCorner = 'RR';
+    }
+
+    const minRHmm = minRH * 1000;
+    if (minRHmm <= ANALYSIS.BOTTOMING_THRESHOLD_MM) {
       const pct = ch.LapDistPct![i] * 100;
       const isKerb = kerbZones.some(([a, b]) => pct >= a && pct <= b);
 
@@ -296,8 +309,7 @@ function analyzeBottoming(
 
       // Track first 100 events for location display
       if (byLocation.length < 100) {
-        const worstCorner = corners.reduce((a, b) => (a.rh < b.rh ? a : b));
-        byLocation.push({ pct, corner: worstCorner.name, rideHeight: worstCorner.rh * 1000 });
+        byLocation.push({ pct, corner: worstCorner, rideHeight: minRHmm });
       }
     }
   }
@@ -345,17 +357,21 @@ function analyzeGForce(
   }
 
   const data: GForceSample[] = [];
-  for (let i = 0; i < recordCount; i++) {
-    if (!validMask[i] || i % 6 !== 0) continue;
-    data.push({
-      lat: accelToG(ch.LatAccel![i]),
-      long: accelToG(ch.LongAccel![i]),
-    });
-  }
+  let peakLat = 0;
+  let peakBrake = 0;
+  let peakAccel = 0;
 
-  const peakLat = Math.max(...data.map((d) => Math.abs(d.lat)), 0);
-  const peakBrake = Math.min(...data.map((d) => d.long), 0);
-  const peakAccel = Math.max(...data.map((d) => d.long), 0);
+  for (let i = 0; i < recordCount; i += 6) {
+    if (!validMask[i]) continue;
+    const lat = accelToG(ch.LatAccel![i]);
+    const long = accelToG(ch.LongAccel![i]);
+    data.push({ lat, long });
+
+    const absLat = Math.abs(lat);
+    if (absLat > peakLat) peakLat = absLat;
+    if (long < peakBrake) peakBrake = long;
+    if (long > peakAccel) peakAccel = long;
+  }
 
   return { data, peakLat, peakBrake, peakAccel };
 }
@@ -396,28 +412,35 @@ function analyzeDriverAids(
     ['RARB', 'dcAntiRollRear'],
   ];
 
-  for (const [name, key] of aidChannels) {
-    if (!ch[key]) continue;
-    let min = Infinity;
-    let max = -Infinity;
-    let sum = 0;
-    let cnt = 0;
+  const stats = aidChannels
+    .filter(([, key]) => !!ch[key])
+    .map(([name, key]) => ({
+      name,
+      key,
+      min: Infinity,
+      max: -Infinity,
+      sum: 0,
+      cnt: 0,
+    }));
 
-    for (let i = 0; i < recordCount; i++) {
-      if (!validMask[i]) continue;
-      const v = ch[key]![i];
-      if (v < min) min = v;
-      if (v > max) max = v;
-      sum += v;
-      cnt++;
+  for (let i = 0; i < recordCount; i++) {
+    if (!validMask[i]) continue;
+    for (const s of stats) {
+      const v = ch[s.key]![i];
+      if (v < s.min) s.min = v;
+      if (v > s.max) s.max = v;
+      s.sum += v;
+      s.cnt++;
     }
+  }
 
-    if (cnt > 0) {
-      aids[name] = {
-        avg: sum / cnt,
-        min,
-        max,
-        constant: max - min < ANALYSIS.CONDITIONING_CONSTANT_THRESHOLD,
+  for (const s of stats) {
+    if (s.cnt > 0) {
+      aids[s.name] = {
+        avg: s.sum / s.cnt,
+        min: s.min,
+        max: s.max,
+        constant: s.max - s.min < ANALYSIS.CONDITIONING_CONSTANT_THRESHOLD,
       };
     }
   }
@@ -444,10 +467,12 @@ function analyzeConditioning(
     ['RR', 'RRtempR', 'RRtempM', 'RRtempL'],
   ];
 
-  for (const [corner, tempO, tempM, tempI] of cornerChannels) {
-    const fLate = laps[fl].samples.slice(Math.floor(laps[fl].count / 2));
-    const lLate = laps[ll].samples.slice(Math.floor(laps[ll].count / 2));
+  const firstLapData = laps[fl];
+  const lastLapData = laps[ll];
+  const firstLateStart = firstLapData.start + Math.floor(firstLapData.count / 2);
+  const lastLateStart = lastLapData.start + Math.floor(lastLapData.count / 2);
 
+  for (const [corner, tempO, tempM, tempI] of cornerChannels) {
     const channels = [tempO, tempM, tempI];
     let avgF = 0;
     let avgL = 0;
@@ -455,8 +480,8 @@ function analyzeConditioning(
 
     for (const c of channels) {
       if (!ch[c]) continue;
-      avgF += avg(ch[c]!, fLate);
-      avgL += avg(ch[c]!, lLate);
+      avgF += avgInRange(ch[c]!, firstLateStart, firstLapData.end);
+      avgL += avgInRange(ch[c]!, lastLateStart, lastLapData.end);
       validChannels++;
     }
 
@@ -485,11 +510,11 @@ function analyzeEngineTemps(
   if (!ch.WaterTemp && !ch.OilTemp) return [];
 
   return validLaps.map((l) => {
-    const s = laps[l].samples;
+    const lap = laps[l];
     return {
       lap: l,
-      waterTemp: ch.WaterTemp ? avg(ch.WaterTemp, s) : 0,
-      oilTemp: ch.OilTemp ? avg(ch.OilTemp, s) : 0,
+      waterTemp: ch.WaterTemp ? avgInRange(ch.WaterTemp, lap.start, lap.end) : 0,
+      oilTemp: ch.OilTemp ? avgInRange(ch.OilTemp, lap.start, lap.end) : 0,
     };
   });
 }
@@ -512,33 +537,48 @@ function analyzeRARB(
     { range: '220-300 km/h', min: 220, max: 300 },
   ];
 
-  const speedBands: RARBSpeedBand[] = bands.map(({ range, min, max }) => {
-    const values: number[] = [];
-    for (let i = 0; i < recordCount; i++) {
-      if (!validMask[i]) continue;
-      const spdKph = speedToKph(ch.Speed![i]);
-      if (spdKph >= min && spdKph < max) {
-        values.push(ch.dcAntiRollRear![i]);
+  const bandStats = bands.map(() => ({ sum: 0, min: Infinity, max: -Infinity, count: 0 }));
+  for (let i = 0; i < recordCount; i++) {
+    if (!validMask[i]) continue;
+    const spdKph = speedToKph(ch.Speed![i]);
+    const value = ch.dcAntiRollRear![i];
+
+    let bandIdx = -1;
+    for (let b = 0; b < bands.length; b++) {
+      if (spdKph >= bands[b].min && spdKph < bands[b].max) {
+        bandIdx = b;
+        break;
       }
     }
-    if (values.length === 0) {
+    if (bandIdx === -1) continue;
+
+    const s = bandStats[bandIdx];
+    s.sum += value;
+    s.count++;
+    if (value < s.min) s.min = value;
+    if (value > s.max) s.max = value;
+  }
+
+  const speedBands: RARBSpeedBand[] = bands.map(({ range }, idx) => {
+    const s = bandStats[idx];
+    if (s.count === 0) {
       return { range, avgValue: 0, minValue: 0, maxValue: 0, sampleCount: 0 };
     }
     return {
       range,
-      avgValue: values.reduce((a, b) => a + b, 0) / values.length,
-      minValue: Math.min(...values),
-      maxValue: Math.max(...values),
-      sampleCount: values.length,
+      avgValue: s.sum / s.count,
+      minValue: s.min,
+      maxValue: s.max,
+      sampleCount: s.count,
     };
   });
 
   // Per-lap change counting
   const perLapChanges: RARBLapChange[] = validLaps.map((l) => {
-    const s = laps[l].samples;
     let changes = 0;
-    for (let j = 1; j < s.length; j++) {
-      if (Math.abs(ch.dcAntiRollRear![s[j]] - ch.dcAntiRollRear![s[j - 1]]) > 0.01) {
+    const lap = laps[l];
+    for (let i = lap.start + 1; i <= lap.end; i++) {
+      if (Math.abs(ch.dcAntiRollRear![i] - ch.dcAntiRollRear![i - 1]) > 0.01) {
         changes++;
       }
     }
@@ -548,14 +588,14 @@ function analyzeRARB(
   // Best-lap RARB change log
   const bestLapLog: RARBChangeEvent[] = [];
   if (laps[bestLapIdx]) {
-    const s = laps[bestLapIdx].samples;
-    for (let j = 1; j < s.length; j++) {
-      const from = ch.dcAntiRollRear![s[j - 1]];
-      const to = ch.dcAntiRollRear![s[j]];
+    const lap = laps[bestLapIdx];
+    for (let i = lap.start + 1; i <= lap.end; i++) {
+      const from = ch.dcAntiRollRear![i - 1];
+      const to = ch.dcAntiRollRear![i];
       if (Math.abs(to - from) > 0.01) {
         bestLapLog.push({
-          pct: ch.LapDistPct ? ch.LapDistPct[s[j]] * 100 : 0,
-          speed: speedToKph(ch.Speed![s[j]]),
+          pct: ch.LapDistPct ? ch.LapDistPct[i] * 100 : 0,
+          speed: speedToKph(ch.Speed![i]),
           fromValue: from,
           toValue: to,
         });
@@ -649,7 +689,8 @@ export function analyzeSession(
   // Build masks
   const validMask = new Uint8Array(parsed.recordCount);
   for (const l of validLaps) {
-    for (const i of laps[l].samples) validMask[i] = 1;
+    const lap = laps[l];
+    for (let i = lap.start; i <= lap.end; i++) validMask[i] = 1;
   }
 
   const hiSpeedMask = new Uint8Array(parsed.recordCount);

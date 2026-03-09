@@ -93,7 +93,6 @@ export interface LapTime {
 }
 
 export interface LapData {
-  samples: number[];
   start: number;
   end: number;
   duration: number;
