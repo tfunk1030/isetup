@@ -1,6 +1,6 @@
 ---
 description: Guidance for the iRacing GTP Engineer plugin, commands, installer, and Python parser
-globs: iracing-gtp-engineer-plugin/**/*.md,iracing-gtp-engineer-plugin/**/*.json,iracing-gtp-engineer-plugin/**/*.py,iracing-gtp-engineer-plugin/install.ps1
+globs: iracing-gtp-engineer-plugin/**/*.md,iracing-gtp-engineer-plugin/**/*.json,iracing-gtp-engineer-plugin/**/*.py,iracing-gtp-engineer-plugin/**/*.ps1
 ---
 
 # Plugin workflow guidance
