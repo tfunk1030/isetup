@@ -53,7 +53,31 @@ export async function exportPDF(analysis: SessionAnalysis): Promise<void> {
   addRow('Track Temp', analysis.header.trackTemp);
   addRow('Duration', analysis.header.duration);
   addRow('Brake Migration', analysis.header.hasBrakeMig ? 'YES' : 'NO');
+  addRow('Data Confidence', analysis.dataQuality.confidence);
   addSeparator();
+
+  if (analysis.dataQuality.notes.length > 0) {
+    addHeader('Data Quality Notes');
+    for (const note of analysis.dataQuality.notes.slice(0, 4)) {
+      addRow('-', note);
+    }
+    addSeparator();
+  }
+
+  if (analysis.recommendations.length > 0) {
+    addHeader('Setup Recommendations');
+    for (const rec of analysis.recommendations.slice(0, 8)) {
+      addRow(
+        `${rec.severity} ${rec.category}`,
+        `${rec.title} (${rec.confidence})`
+      );
+      addRow('Action', rec.action);
+      if (rec.evidence[0]) {
+        addRow('Evidence', rec.evidence[0]);
+      }
+    }
+    addSeparator();
+  }
 
   // Lap Times
   addHeader('Lap Times');

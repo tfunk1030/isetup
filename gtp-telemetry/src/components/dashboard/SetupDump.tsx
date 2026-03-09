@@ -11,6 +11,14 @@ export function SetupDump({ analysis }: Props) {
 
   return (
     <Card title="Full Setup (from IBT Session Info)" icon={'\u{1F527}'}>
+      <div className="mb-4 p-3 rounded-lg bg-[var(--color-bg)] text-xs text-[var(--color-text-muted)]">
+        <p>
+          Quality: {analysis.dataQuality.confidence} • Valid laps: {analysis.dataQuality.validLapCount}
+        </p>
+        {analysis.dataQuality.parserWarnings.length > 0 && (
+          <p>Parser warnings: {analysis.dataQuality.parserWarnings.length}</p>
+        )}
+      </div>
       <button
         onClick={() => setShowSetup(!showSetup)}
         className="bg-[var(--color-accent)] text-black border-none px-4 py-2 rounded-md cursor-pointer text-[13px] font-semibold mb-4 hover:opacity-90 transition-opacity"

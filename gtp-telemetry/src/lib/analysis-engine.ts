@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { speedToKph, accelToG, pressureToPSI, heightToMM } from './unit-conversions';
-import { ANALYSIS } from './constants';
+import { ANALYSIS, CHANNEL_UNITS, ENGINE_TEMP, RECOMMENDATION, SHOCK_VELOCITY, TYRE_TEMP } from './constants';
 import type {
   IBTParsed,
   SessionAnalysis,
@@ -31,6 +31,10 @@ import type {
   CarProfile,
   TrackProfile,
   Driver,
+  ConfidenceLevel,
+  DataQualityReport,
+  SetupRecommendation,
+  RecommendationSeverity,
 } from './types';
 import { ANALYSIS_CHANNELS } from './types';
 
@@ -542,7 +546,7 @@ function analyzeConditioning(
       first: avgF,
       last: avgL,
       rate,
-      lapsTo85: rate > 0 ? Math.max(0, Math.ceil((85 - avgL) / rate)) : 99,
+      lapsTo85: rate > 0 ? Math.max(0, Math.ceil((ANALYSIS.CONDITIONING_TARGET_TEMP - avgL) / rate)) : 99,
     };
   }
 
@@ -629,7 +633,7 @@ function analyzeRARB(
       const now = ch.dcAntiRollRear![i];
       const prev = ch.dcAntiRollRear![i - 1];
       if (!Number.isFinite(now) || !Number.isFinite(prev)) continue;
-      if (Math.abs(now - prev) > 0.01) {
+      if (Math.abs(now - prev) > ANALYSIS.RARB_CHANGE_DELTA) {
         changes++;
       }
     }
@@ -644,7 +648,7 @@ function analyzeRARB(
       const from = ch.dcAntiRollRear![i - 1];
       const to = ch.dcAntiRollRear![i];
       if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
-      if (Math.abs(to - from) > 0.01) {
+      if (Math.abs(to - from) > ANALYSIS.RARB_CHANGE_DELTA) {
         const pct = ch.LapDistPct ? ch.LapDistPct[i] * 100 : 0;
         const speed = speedToKph(ch.Speed![i]);
         if (!Number.isFinite(pct) || !Number.isFinite(speed)) continue;
@@ -717,14 +721,418 @@ function flattenSetup(obj: Record<string, unknown>, prefix = ''): [string, unkno
   return out;
 }
 
+const CRITICAL_CHANNELS: readonly string[] = ['SessionTime', 'Lap', 'LapDistPct', 'Speed'];
+
+function pickSeverity(warn: boolean, critical: boolean): RecommendationSeverity {
+  if (critical) return 'CRITICAL';
+  if (warn) return 'WARNING';
+  return 'INFO';
+}
+
+function toConfidence(score: number): ConfidenceLevel {
+  if (score >= 80) return 'HIGH';
+  if (score >= 55) return 'MEDIUM';
+  return 'LOW';
+}
+
+function buildDataQualityReport(
+  parsed: IBTParsed,
+  validLaps: number[],
+  parserWarnings: string[]
+): DataQualityReport {
+  const criticalMissingChannels = CRITICAL_CHANNELS.filter((name) => !parsed.vars[name]);
+  const optionalMissingChannels = ANALYSIS_CHANNELS.filter((name) => !parsed.vars[name] && !CRITICAL_CHANNELS.includes(name));
+  const unitMismatches: string[] = [];
+
+  for (const [channel, expectedUnit] of Object.entries(CHANNEL_UNITS)) {
+    const actual = parsed.vars[channel]?.unit;
+    if (!actual) continue;
+    const normalizedActual = actual.toLowerCase();
+    const normalizedExpected = expectedUnit.toLowerCase();
+    if (!normalizedActual.includes(normalizedExpected)) {
+      unitMismatches.push(`${channel}: expected "${expectedUnit}", got "${actual}"`);
+    }
+  }
+
+  let score = 100;
+  score -= criticalMissingChannels.length * 35;
+  score -= optionalMissingChannels.length * 2;
+  score -= unitMismatches.length * 5;
+  score -= parserWarnings.length * 4;
+
+  if (validLaps.length <= RECOMMENDATION.LOW_VALID_LAP_CRITICAL) score -= 30;
+  else if (validLaps.length <= RECOMMENDATION.LOW_VALID_LAP_WARN) score -= 12;
+
+  const confidence = toConfidence(Math.max(0, Math.min(100, score)));
+  const sectionConfidence: Record<string, ConfidenceLevel> = {
+    tyres: confidence,
+    platform: confidence,
+    dynamics: confidence,
+    setup: confidence,
+  };
+
+  if (optionalMissingChannels.some((c) => c.includes('temp') || c.includes('pressure') || c.includes('wear'))) {
+    sectionConfidence.tyres = 'LOW';
+  }
+  if (optionalMissingChannels.some((c) => c.includes('rideHeight') || c.includes('shock'))) {
+    sectionConfidence.platform = 'LOW';
+  }
+  if (optionalMissingChannels.some((c) => c.includes('Accel') || c.includes('Steering'))) {
+    sectionConfidence.dynamics = 'LOW';
+  }
+  if (optionalMissingChannels.some((c) => c.startsWith('dc'))) {
+    sectionConfidence.setup = 'LOW';
+  }
+
+  const notes: string[] = [];
+  if (validLaps.length <= RECOMMENDATION.LOW_VALID_LAP_WARN) {
+    notes.push(`Limited sample size (${validLaps.length} valid laps).`);
+  }
+  if (optionalMissingChannels.length >= RECOMMENDATION.OPTIONAL_CHANNEL_MISSING_WARN) {
+    notes.push(`Telemetry coverage reduced (${optionalMissingChannels.length} optional channels unavailable).`);
+  }
+  if (unitMismatches.length > 0) {
+    notes.push('Detected channel unit mismatches. Conversion assumptions may be degraded.');
+  }
+
+  return {
+    criticalMissingChannels,
+    optionalMissingChannels,
+    parserWarnings,
+    unitMismatches,
+    validLapCount: validLaps.length,
+    confidence,
+    sectionConfidence,
+    notes,
+  };
+}
+
+function formatAidsContext(carProfile?: CarProfile): string {
+  if (!carProfile) return 'Aids';
+  return carProfile.arbValueType === 'indexed'
+    ? 'Aids (indexed scale)'
+    : 'Aids (descriptive scale)';
+}
+
+type DraftRecommendation = Omit<SetupRecommendation, 'priority'>;
+
+function severityWeight(severity: RecommendationSeverity): number {
+  if (severity === 'CRITICAL') return 0;
+  if (severity === 'WARNING') return 1;
+  return 2;
+}
+
+function recommendationPriority(rec: DraftRecommendation): number {
+  const byCategory: Record<DraftRecommendation['category'], number> = {
+    AERO: 2,
+    PLATFORM: 2,
+    DYNAMICS: 4,
+    TYRES: 7,
+    BRAKES: 5,
+    AIDS: 5,
+    POWERTRAIN: 8,
+    TRACK: 9,
+  };
+  const bySeverity: Record<DraftRecommendation['severity'], number> = {
+    CRITICAL: 1,
+    WARNING: 3,
+    INFO: 6,
+  };
+
+  return Math.min(byCategory[rec.category], bySeverity[rec.severity]);
+}
+
+function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupRecommendation[] {
+  if (recommendations.length === 0) {
+    return [{
+      id: 'all-clear',
+      category: 'TRACK',
+      priority: 10,
+      title: 'No major setup risks detected',
+      action: 'Current telemetry appears stable. Continue validating across longer stints and changing track conditions.',
+      rationale: 'No high-priority anomalies were detected in the available dataset.',
+      confidence: 'MEDIUM',
+      severity: 'INFO',
+      evidence: ['Recommendation engine found no actionable high-risk triggers.'],
+    }];
+  }
+
+  const withPriority = recommendations.map((rec) => ({
+    ...rec,
+    priority: recommendationPriority(rec),
+  }));
+
+  withPriority.sort((a, b) => {
+    const bySeverity = severityWeight(a.severity) - severityWeight(b.severity);
+    if (bySeverity !== 0) return bySeverity;
+    const byPriority = a.priority - b.priority;
+    if (byPriority !== 0) return byPriority;
+    return a.title.localeCompare(b.title);
+  });
+
+  return withPriority.slice(0, 15);
+}
+
+function buildRecommendations(args: {
+  carProfile?: CarProfile;
+  trackProfile?: TrackProfile;
+  tyreTempData: TyreTempLap[];
+  tyreWearData: TyreWearLap[];
+  engineTemps: EngineTempsLap[];
+  bottoming: BottomingResult;
+  shockVelStats: Record<string, ShockVelCorner>;
+  aids: Record<string, DriverAid>;
+  splitter: SplitterData | null;
+  rarb: RARBAnalysis | null;
+  dataQuality: DataQualityReport;
+}): SetupRecommendation[] {
+  const recommendations: DraftRecommendation[] = [];
+  const {
+    carProfile,
+    trackProfile,
+    tyreTempData,
+    tyreWearData,
+    engineTemps,
+    bottoming,
+    shockVelStats,
+    aids,
+    splitter,
+    rarb,
+    dataQuality,
+  } = args;
+
+  const cleanBottoming = bottoming.clean;
+  if (cleanBottoming >= RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_WARN) {
+    const critical = cleanBottoming >= RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_CRITICAL;
+    recommendations.push({
+      id: 'platform-bottoming',
+      category: 'PLATFORM',
+      title: 'Reduce clean-track bottoming',
+      action: 'Raise front ride height slightly and/or increase high-speed compression support to protect platform.',
+      rationale: 'Frequent clean-track strikes indicate aerodynamic platform collapse away from kerbs.',
+      confidence: dataQuality.sectionConfidence.platform,
+      severity: pickSeverity(true, critical),
+      evidence: [
+        `Clean bottoming events: ${cleanBottoming}`,
+        `Kerb bottoming events: ${bottoming.kerb}`,
+      ],
+    });
+  }
+
+  if (splitter) {
+    const warn = splitter.minHeight <= RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM;
+    const critical = splitter.minHeight <= RECOMMENDATION.SPLITTER_MIN_HEIGHT_CRITICAL_MM;
+    if (warn) {
+      recommendations.push({
+        id: 'platform-splitter',
+        category: 'AERO',
+        title: 'Protect splitter at speed',
+        action: 'Increase front platform support (ride height/spring/heave support) to prevent sustained splitter contact.',
+        rationale: 'Very low front-center ride height at high speed increases aero inconsistency and floor strike risk.',
+        confidence: dataQuality.sectionConfidence.platform,
+        severity: pickSeverity(warn, critical),
+        evidence: [
+          `Min splitter height: ${splitter.minHeight.toFixed(1)} mm`,
+          `Splitter bottoming count: ${splitter.bottomingCount}`,
+        ],
+      });
+    }
+  }
+
+  for (const [corner, stats] of Object.entries(shockVelStats)) {
+    if (stats.peak >= RECOMMENDATION.SHOCK_PEAK_WARN_MM_S) {
+      const critical = stats.peak >= RECOMMENDATION.SHOCK_PEAK_CRITICAL_MM_S;
+      recommendations.push({
+        id: `shock-${corner.toLowerCase()}`,
+        category: 'DYNAMICS',
+        title: `${corner} damper high-speed event control`,
+        action: 'Review high-speed damper settings and wheel-rate support in this corner to control peak velocity spikes.',
+        rationale: 'High peak shaft velocities suggest harsh platform transients and can reduce mechanical confidence.',
+        confidence: dataQuality.sectionConfidence.platform,
+        severity: pickSeverity(true, critical),
+        evidence: [
+          `${corner} p99: ${stats.p99.toFixed(0)} mm/s`,
+          `${corner} peak: ${stats.peak.toFixed(0)} mm/s (extreme>${SHOCK_VELOCITY.EXTREME})`,
+        ],
+      });
+    }
+  }
+
+  const lastTemps = tyreTempData[tyreTempData.length - 1];
+  if (lastTemps) {
+    for (const corner of ['LF', 'RF', 'LR', 'RR'] as const) {
+      const d = lastTemps[corner];
+      const avg = (d.O + d.M + d.I) / 3;
+      const spread = Math.abs(d.I - d.O);
+      const crownDelta = d.M - (d.O + d.I) / 2;
+      const severity = pickSeverity(
+        spread >= RECOMMENDATION.TYRE_TEMP_SPREAD_WARN_C || Math.abs(crownDelta) >= RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C,
+        spread >= RECOMMENDATION.TYRE_TEMP_SPREAD_CRITICAL_C
+      );
+      if (severity !== 'INFO') {
+        const crownHint = crownDelta >= RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
+          ? 'center too hot (possible over-pressure)'
+          : crownDelta <= -RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
+            ? 'shoulders too hot (possible under-pressure/camber mismatch)'
+            : 'shape near target';
+        recommendations.push({
+          id: `tyre-shape-${corner.toLowerCase()}`,
+          category: 'TYRES',
+          title: `${corner} contact patch balance`,
+          action: 'Adjust pressure/camber to reduce inner-outer spread and improve contact patch consistency.',
+          rationale: 'Large surface gradients indicate load distribution imbalance and reduced peak grip window.',
+          confidence: dataQuality.sectionConfidence.tyres,
+          severity,
+          evidence: [
+            `${corner} avg temp: ${avg.toFixed(1)} C (target ${TYRE_TEMP.OPERATING_TARGET} C)`,
+            `${corner} I-O spread: ${spread.toFixed(1)} C`,
+            `${corner} shape: ${crownHint}`,
+          ],
+        });
+      }
+    }
+  }
+
+  const lastWear = tyreWearData[tyreWearData.length - 1];
+  if (lastWear) {
+    for (const corner of ['LF', 'RF', 'LR', 'RR'] as const) {
+      if (lastWear[corner].avg < ANALYSIS.TYRE_WEAR_RISK_THRESHOLD) {
+        recommendations.push({
+          id: `wear-${corner.toLowerCase()}`,
+          category: 'TYRES',
+          title: `${corner} wear management`,
+          action: 'Reduce sustained slip/load in this corner through balance adjustments (ARB, camber, pressure, diff strategy).',
+          rationale: 'Accelerated wear suggests the current setup is overworking this tyre over race stint conditions.',
+          confidence: dataQuality.sectionConfidence.tyres,
+          severity: 'WARNING',
+          evidence: [
+            `${corner} tread remaining: ${lastWear[corner].avg.toFixed(1)}%`,
+            `Wear threshold: ${ANALYSIS.TYRE_WEAR_RISK_THRESHOLD}%`,
+          ],
+        });
+      }
+    }
+  }
+
+  const lastEngine = engineTemps[engineTemps.length - 1];
+  if (lastEngine && (lastEngine.waterTemp >= ENGINE_TEMP.WATER_WARNING || lastEngine.oilTemp >= ENGINE_TEMP.OIL_WARNING)) {
+    recommendations.push({
+      id: 'engine-temperature-control',
+      category: 'POWERTRAIN',
+      title: 'Engine thermal headroom',
+      action: 'Reduce sustained thermal load via ducting/radiator settings and balance aero drag impact against stint stability.',
+      rationale: 'High coolant/oil temperatures can force protection behavior and compromise performance consistency.',
+      confidence: dataQuality.sectionConfidence.dynamics,
+      severity: lastEngine.waterTemp >= ENGINE_TEMP.WATER_WARNING + 5 || lastEngine.oilTemp >= ENGINE_TEMP.OIL_WARNING + 5
+        ? 'CRITICAL'
+        : 'WARNING',
+      evidence: [
+        `Water temp (last lap): ${lastEngine.waterTemp.toFixed(1)} C`,
+        `Oil temp (last lap): ${lastEngine.oilTemp.toFixed(1)} C`,
+        `Warning thresholds: water>${ENGINE_TEMP.WATER_WARNING} C, oil>${ENGINE_TEMP.OIL_WARNING} C`,
+      ],
+    });
+  }
+
+  if (rarb?.available && rarb.perLapChanges.length > 0) {
+    const avgChanges = rarb.perLapChanges.reduce((acc, p) => acc + p.changeCount, 0) / rarb.perLapChanges.length;
+    const farbAvg = aids.FARB?.avg;
+    const rarbAvg = aids.RARB?.avg;
+    if (avgChanges >= RECOMMENDATION.DRIVER_AID_ACTIVE_RANGE_WARN) {
+      recommendations.push({
+        id: 'rarb-usage',
+        category: 'AIDS',
+        title: 'Stabilize ARB map usage',
+        action: 'If ARB blades are being adjusted often, move baseline closer to required balance to reduce in-lap management burden.',
+        rationale: 'Frequent ARB changes can indicate setup baseline mismatch across speed phases.',
+        confidence: dataQuality.sectionConfidence.setup,
+        severity: 'WARNING',
+        evidence: [
+          `Average RARB changes/lap: ${avgChanges.toFixed(1)}`,
+          `FARB avg: ${Number.isFinite(farbAvg) ? farbAvg?.toFixed(1) : 'n/a'}, RARB avg: ${Number.isFinite(rarbAvg) ? rarbAvg?.toFixed(1) : 'n/a'}`,
+          formatAidsContext(carProfile),
+        ],
+      });
+    }
+  }
+
+  const brakeBias = aids['Brake Bias'];
+  if (brakeBias && carProfile) {
+    const biasOffset = Math.abs(brakeBias.avg - carProfile.defaultBrakeBias);
+    if (biasOffset > 1.0) {
+      recommendations.push({
+        id: 'brake-bias-calibration',
+        category: 'BRAKES',
+        title: 'Re-check brake balance baseline',
+        action: 'Validate brake bias baseline against corner entry stability and ABS behavior for this car.',
+        rationale: 'Large drift from known baseline can indicate setup-compensation rather than root-cause fix.',
+        confidence: dataQuality.sectionConfidence.setup,
+        severity: biasOffset > 2.0 ? 'CRITICAL' : 'WARNING',
+        evidence: [
+          `Observed avg brake bias: ${brakeBias.avg.toFixed(2)}`,
+          `Car baseline brake bias: ${carProfile.defaultBrakeBias.toFixed(2)}`,
+        ],
+      });
+    }
+  }
+
+  if (trackProfile?.setupFocus) {
+    recommendations.push({
+      id: 'track-focus',
+      category: 'TRACK',
+      title: 'Track-priority setup focus',
+      action: trackProfile.setupFocus,
+      rationale: 'Prioritize setup work that aligns with this track profile before fine-tuning secondary areas.',
+      confidence: dataQuality.confidence,
+      severity: 'INFO',
+      evidence: [
+        `Track profile: ${trackProfile.name}`,
+        `Mandatory gear stack: ${trackProfile.mandatoryGearStack || 'none'}`,
+      ],
+    });
+  }
+
+  if (carProfile?.knownQuirks.length) {
+    recommendations.push({
+      id: 'car-quirks',
+      category: 'TRACK',
+      title: `${carProfile.name} known quirks`,
+      action: 'Cross-check recommendations against known platform quirks before finalizing setup changes.',
+      rationale: 'Car-specific architecture can change how generic setup deltas translate on track.',
+      confidence: dataQuality.confidence,
+      severity: 'INFO',
+      evidence: carProfile.knownQuirks.slice(0, 3),
+    });
+  }
+
+  if (dataQuality.confidence === 'LOW') {
+    recommendations.unshift({
+      id: 'low-confidence',
+      category: 'TRACK',
+      title: 'Low-confidence dataset',
+      action: 'Capture a cleaner reference run (more valid laps and broader channel coverage) before locking setup decisions.',
+      rationale: 'Recommendation confidence is reduced due to telemetry coverage/quality constraints.',
+      confidence: 'LOW',
+      severity: 'CRITICAL',
+      evidence: [
+        `Quality confidence: ${dataQuality.confidence}`,
+        ...dataQuality.notes,
+      ],
+    });
+  }
+
+  return finalizeRecommendations(recommendations);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN ANALYSIS ORCHESTRATOR
 // ═══════════════════════════════════════════════════════════════
 
 export function analyzeSession(
   parsed: IBTParsed,
-  _carProfile?: CarProfile,
-  trackProfile?: TrackProfile
+  carProfile?: CarProfile,
+  trackProfile?: TrackProfile,
+  parserWarnings: string[] = []
 ): SessionAnalysis | { error: string } {
   const ch = loadChannels(parsed);
   const driver = findDriver(parsed);
@@ -798,6 +1206,20 @@ export function analyzeSession(
   const engineTemps = analyzeEngineTemps(ch, laps, validLaps);
   const rarb = analyzeRARB(ch, laps, validLaps, parsed.recordCount, validMask, bestLapIdx);
   const splitter = analyzeSplitter(ch, parsed.recordCount, hiSpeedMask);
+  const dataQuality = buildDataQualityReport(parsed, validLaps, parserWarnings);
+  const recommendations = buildRecommendations({
+    carProfile,
+    trackProfile,
+    tyreTempData,
+    tyreWearData,
+    engineTemps,
+    bottoming,
+    shockVelStats,
+    aids,
+    splitter,
+    rarb,
+    dataQuality,
+  });
 
   const cs = parsed.sessionInfo?.CarSetup || {};
 
@@ -823,5 +1245,9 @@ export function analyzeSession(
     rarb,
     splitter,
     validLaps,
+    recommendations,
+    dataQuality,
+    carProfileId: carProfile?.id || null,
+    trackProfileId: trackProfile?.id || null,
   };
 }

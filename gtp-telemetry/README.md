@@ -43,6 +43,29 @@ npm run dev -- --host 0.0.0.0
 - `npm run build` — type-check and create a production build
 - `npm run lint` — run ESLint
 - `npm run preview` — preview the built app
+- `npm run analysis:regression` — run fixture-based analysis regression checks
+- `npm run verify` — run lint + build + regression checks
+
+## AI-assisted recommendations (optional)
+
+The dashboard includes an **AI Setup Assistant** panel that can synthesize a concise setup brief from
+telemetry analysis + rule-engine recommendations.
+
+Configure these env vars to enable dual-model cloud synthesis (Gemini + Opus):
+
+```bash
+VITE_GEMINI_API_KEY=your_google_ai_key
+VITE_GEMINI_MODEL=gemini-3.1-pro
+VITE_GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+
+VITE_ANTHROPIC_API_KEY=your_anthropic_key
+VITE_OPUS_MODEL=claude-opus-4-6
+VITE_ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
+```
+
+If one model key is configured, it runs single-model AI mode.  
+If both keys are configured, it runs dual-model consensus mode.  
+If no keys are configured, the panel still works using a local rule-engine fallback summary.
 
 ## Repo map
 

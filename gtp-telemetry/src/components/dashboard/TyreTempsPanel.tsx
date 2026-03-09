@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
-import { COLORS, TYRE_TEMP } from '../../lib/constants';
+import { COLORS, RECOMMENDATION, TYRE_TEMP } from '../../lib/constants';
 import type { SessionAnalysis } from '../../lib/types';
 
 interface Props {
@@ -66,7 +66,13 @@ export function TyreTempsPanel({ analysis }: Props) {
             <MetricRow label="I-O Spread" value={(d.I - d.O).toFixed(1)} unit={'\u00B0C'} />
             <MetricRow
               label="Shape"
-              value={midVsEdges > 3 ? 'Crown (high psi)' : midVsEdges < -3 ? 'Cup (low psi)' : 'Good'}
+              value={
+                midVsEdges > RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
+                  ? 'Crown (high psi)'
+                  : midVsEdges < -RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
+                    ? 'Cup (low psi)'
+                    : 'Good'
+              }
             />
           </Card>
         );

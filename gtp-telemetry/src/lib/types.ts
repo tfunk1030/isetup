@@ -236,6 +236,52 @@ export interface SplitterData {
   bottomingCount: number;
 }
 
+export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
+export type RecommendationSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+export type RecommendationCategory =
+  | 'PLATFORM'
+  | 'TYRES'
+  | 'AERO'
+  | 'DYNAMICS'
+  | 'AIDS'
+  | 'BRAKES'
+  | 'POWERTRAIN'
+  | 'TRACK';
+
+export interface SetupRecommendation {
+  id: string;
+  category: RecommendationCategory;
+  priority: number;
+  title: string;
+  action: string;
+  rationale: string;
+  confidence: ConfidenceLevel;
+  severity: RecommendationSeverity;
+  evidence: string[];
+}
+
+export interface DataQualityReport {
+  criticalMissingChannels: string[];
+  optionalMissingChannels: string[];
+  parserWarnings: string[];
+  unitMismatches: string[];
+  validLapCount: number;
+  confidence: ConfidenceLevel;
+  sectionConfidence: Record<string, ConfidenceLevel>;
+  notes: string[];
+}
+
+export interface AISetupBrief {
+  summary: string;
+  priorityActions: string[];
+  watchItems: string[];
+  confidenceNote: string;
+  reasoning: string[];
+  disagreements: string[];
+  source: 'consensus' | 'single-model' | 'rule-engine';
+  modelsUsed: string[];
+}
+
 export interface SessionAnalysis {
   header: SessionHeader;
   setup: [string, unknown][];
@@ -258,6 +304,10 @@ export interface SessionAnalysis {
   rarb: RARBAnalysis | null;
   splitter: SplitterData | null;
   validLaps: number[];
+  recommendations: SetupRecommendation[];
+  dataQuality: DataQualityReport;
+  carProfileId: string | null;
+  trackProfileId: string | null;
 }
 
 // Car Profile

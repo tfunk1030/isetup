@@ -75,7 +75,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
       // Analyze
       set({ progress: 'Running 14-item analysis checklist...' });
-      const result = analyzeSession(parsed, carProfile || undefined, trackProfile);
+      const result = analyzeSession(parsed, carProfile || undefined, trackProfile, validation.warnings);
 
       if ('error' in result) {
         set({ loading: false, error: result.error });

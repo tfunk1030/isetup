@@ -49,6 +49,12 @@ const RARBAnalysis = lazy(() =>
 const SetupDump = lazy(() =>
   import('./components/dashboard/SetupDump').then((m) => ({ default: m.SetupDump }))
 );
+const SetupRecommendationsPanel = lazy(() =>
+  import('./components/dashboard/SetupRecommendationsPanel').then((m) => ({ default: m.SetupRecommendationsPanel }))
+);
+const AIRecommendationAssistant = lazy(() =>
+  import('./components/dashboard/AIRecommendationAssistant').then((m) => ({ default: m.AIRecommendationAssistant }))
+);
 
 function Dashboard() {
   const { analysis, activeTab, setActiveTab } = useSessionStore();
@@ -70,41 +76,45 @@ function Dashboard() {
           }
         >
           {activeTab === 'overview' && (
-            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-              <LapTimesChart analysis={a} />
+            <div className="space-y-4">
+              <SetupRecommendationsPanel analysis={a} />
+              <AIRecommendationAssistant analysis={a} />
+              <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+                <LapTimesChart analysis={a} />
 
-              <Card title="Session" icon={'\u{1F4CB}'}>
-                <MetricRow label="Air Temp" value={a.header.airTemp} />
-                <MetricRow label="Track Temp" value={a.header.trackTemp} />
-                <MetricRow label="Fuel Start" value={a.fuel.start?.toFixed(1)} unit="L" />
-                <MetricRow label="Fuel/Lap" value={a.fuel.perLap?.toFixed(2)} unit="L" />
-                <MetricRow label="Range" value={`~${Math.floor(a.fuel.range)}`} unit="laps" />
-              </Card>
+                <Card title="Session" icon={'\u{1F4CB}'}>
+                  <MetricRow label="Air Temp" value={a.header.airTemp} />
+                  <MetricRow label="Track Temp" value={a.header.trackTemp} />
+                  <MetricRow label="Fuel Start" value={a.fuel.start?.toFixed(1)} unit="L" />
+                  <MetricRow label="Fuel/Lap" value={a.fuel.perLap?.toFixed(2)} unit="L" />
+                  <MetricRow label="Range" value={`~${Math.floor(a.fuel.range)}`} unit="laps" />
+                </Card>
 
-              <Card title="Platform Safety" icon={'\u{1F6E1}\uFE0F'}>
-                <MetricRow label="Clean Bottoming" value={a.bottoming.clean} status={a.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
-                <MetricRow label="Kerb Bottoming" value={a.bottoming.kerb} status="OK" />
-                {a.shockVelStats.RR && (
-                  <>
-                    <MetricRow label="RR Peak Vel" value={a.shockVelStats.RR.peak.toFixed(0)} unit="mm/s" status={a.shockVelStats.RR.peak > 700 ? 'HOT' : 'OK'} />
-                    <MetricRow label="RF Peak Vel" value={(a.shockVelStats.RF?.peak || 0).toFixed(0)} unit="mm/s" status={(a.shockVelStats.RF?.peak || 0) > 700 ? 'HOT' : 'OK'} />
-                  </>
-                )}
-              </Card>
+                <Card title="Platform Safety" icon={'\u{1F6E1}\uFE0F'}>
+                  <MetricRow label="Clean Bottoming" value={a.bottoming.clean} status={a.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
+                  <MetricRow label="Kerb Bottoming" value={a.bottoming.kerb} status="OK" />
+                  {a.shockVelStats.RR && (
+                    <>
+                      <MetricRow label="RR Peak Vel" value={a.shockVelStats.RR.peak.toFixed(0)} unit="mm/s" status={a.shockVelStats.RR.peak > 700 ? 'HOT' : 'OK'} />
+                      <MetricRow label="RF Peak Vel" value={(a.shockVelStats.RF?.peak || 0).toFixed(0)} unit="mm/s" status={(a.shockVelStats.RF?.peak || 0) > 700 ? 'HOT' : 'OK'} />
+                    </>
+                  )}
+                </Card>
 
-              <Card title="G-Force Envelope" icon={'\u26A1'}>
-                <MetricRow label="Peak Lateral" value={a.peakLatG.toFixed(2)} unit="g" />
-                <MetricRow label="Peak Braking" value={a.peakBrakeG.toFixed(2)} unit="g" />
-                <MetricRow label="Peak Accel" value={a.peakAccelG.toFixed(2)} unit="g" />
-              </Card>
+                <Card title="G-Force Envelope" icon={'\u26A1'}>
+                  <MetricRow label="Peak Lateral" value={a.peakLatG.toFixed(2)} unit="g" />
+                  <MetricRow label="Peak Braking" value={a.peakBrakeG.toFixed(2)} unit="g" />
+                  <MetricRow label="Peak Accel" value={a.peakAccelG.toFixed(2)} unit="g" />
+                </Card>
 
-              <Card title="Driver Aids" icon={'\u{1F39B}\uFE0F'}>
-                {Object.entries(a.aids).map(([name, d]) => (
-                  <MetricRow key={name} label={name} value={d.avg.toFixed(1)} status={d.constant ? 'OK' : 'HIGH'} />
-                ))}
-              </Card>
+                <Card title="Driver Aids" icon={'\u{1F39B}\uFE0F'}>
+                  {Object.entries(a.aids).map(([name, d]) => (
+                    <MetricRow key={name} label={name} value={d.avg.toFixed(1)} status={d.constant ? 'OK' : 'HIGH'} />
+                  ))}
+                </Card>
 
-              <ConditioningTrend analysis={a} />
+                <ConditioningTrend analysis={a} />
+              </div>
             </div>
           )}
 
@@ -134,7 +144,9 @@ function Dashboard() {
             </div>
           )}
 
-          {activeTab === 'setup' && <SetupDump analysis={a} />}
+          {activeTab === 'setup' && (
+            <SetupDump analysis={a} />
+          )}
         </Suspense>
       </div>
     </div>

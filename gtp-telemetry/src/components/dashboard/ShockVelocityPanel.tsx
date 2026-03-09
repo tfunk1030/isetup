@@ -33,7 +33,8 @@ export function ShockVelocityPanel({ analysis }: Props) {
         ))}
       </div>
       <p className="text-[var(--color-text-muted)] text-[11px] mt-3">
-        Penske: &lt;75 mm/s = low-speed damper regime. &gt;700 mm/s = extreme events — consider digressive HS comp slope.
+        Penske: &lt;{SHOCK_VELOCITY.LOW_SPEED_MAX} mm/s = low-speed damper regime.
+        &gt;{SHOCK_VELOCITY.EXTREME} mm/s = extreme events — consider digressive HS comp slope.
       </p>
     </Card>
   );
