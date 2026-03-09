@@ -39,6 +39,15 @@ export function parseIBT(buffer: ArrayBuffer): IBTParsed {
   if (recordCount <= 0) {
     throw new Error(`Invalid record count: ${recordCount}. File may be empty or corrupted.`);
   }
+  if (sessionInfoLen < 0 || sessionInfoOffset < 0 || sessionInfoOffset + sessionInfoLen > buffer.byteLength) {
+    throw new Error('Invalid session info block offsets. File may be corrupted.');
+  }
+  if (varHeaderOffset < 0 || varHeaderOffset + numVars * 144 > buffer.byteLength) {
+    throw new Error('Invalid variable header table offsets. File may be corrupted.');
+  }
+  if (bufLen <= 0 || bufOffset < 0) {
+    throw new Error('Invalid sample buffer header values. File may be corrupted.');
+  }
   if (bufOffset + recordCount * bufLen > buffer.byteLength) {
     throw new Error('File appears truncated. Data buffer extends beyond file size.');
   }

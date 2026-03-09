@@ -85,19 +85,26 @@ function extractSessionHeader(parsed: IBTParsed, driver: Driver | null): Session
 function detectLaps(
   ch: Channels,
   recordCount: number,
-  _tickRate: number,
-  trackProfile?: TrackProfile
+  trackProfile?: TrackProfile,
+  fallbackTrackLength?: string
 ): { laps: Record<number, LapData>; validLaps: number[] } {
   if (!ch.Lap || !ch.SessionTime || !ch.Speed) {
     return { laps: {}, validLaps: [] };
   }
 
   const spd = ch.Speed;
+  const sessionTime = ch.SessionTime;
+  const lapChannel = ch.Lap;
   const laps: Record<number, LapData> = {};
 
   for (let i = 0; i < recordCount; i++) {
-    const l = Math.floor(ch.Lap![i]);
-    const spdKph = speedToKph(spd![i]);
+    const lapRaw = lapChannel![i];
+    if (!Number.isFinite(lapRaw)) continue;
+    const l = Math.floor(lapRaw);
+    if (l < 0) continue;
+
+    const rawSpeed = speedToKph(spd![i]);
+    const spdKph = Number.isFinite(rawSpeed) ? rawSpeed : 0;
     const lap = laps[l];
     if (!lap) {
       laps[l] = { start: i, end: i, duration: 0, maxSpeed: spdKph, count: 1 };
@@ -110,7 +117,9 @@ function detectLaps(
 
   for (const l in laps) {
     const lap = laps[l];
-    lap.duration = ch.SessionTime![lap.end] - ch.SessionTime![lap.start];
+    const startT = sessionTime![lap.start];
+    const endT = sessionTime![lap.end];
+    lap.duration = Number.isFinite(startT) && Number.isFinite(endT) ? endT - startT : 0;
   }
 
   // Valid lap window
@@ -118,9 +127,8 @@ function detectLaps(
   if (trackProfile?.validLapWindow) {
     [minLap, maxLap] = trackProfile.validLapWindow;
   } else {
-    const trackLen = parseFloat(
-      (parsed_weekendInfo_trackLength as string) || '5.8'
-    );
+    const parsedTrackLen = parseFloat(fallbackTrackLength || '5.8');
+    const trackLen = Number.isFinite(parsedTrackLen) ? parsedTrackLen : 5.8;
     minLap = trackLen > 10 ? 150 : trackLen > 3 ? 80 : 40;
     maxLap = trackLen > 10 ? 300 : trackLen > 3 ? 160 : 90;
   }
@@ -138,14 +146,31 @@ function detectLaps(
   return { laps, validLaps };
 }
 
-// We need a way to pass weekend info for track length fallback
-let parsed_weekendInfo_trackLength: unknown = '5.8';
+function firstFiniteInRange(arr: Float64Array, start: number, end: number): number | null {
+  for (let i = start; i <= end; i++) {
+    if (Number.isFinite(arr[i])) return arr[i];
+  }
+  return null;
+}
+
+function lastFiniteInRange(arr: Float64Array, start: number, end: number): number | null {
+  for (let i = end; i >= start; i--) {
+    if (Number.isFinite(arr[i])) return arr[i];
+  }
+  return null;
+}
 
 function avgInRange(arr: Float64Array, start: number, end: number): number {
   if (end < start) return 0;
   let sum = 0;
-  for (let i = start; i <= end; i++) sum += arr[i];
-  return sum / (end - start + 1);
+  let count = 0;
+  for (let i = start; i <= end; i++) {
+    const v = arr[i];
+    if (!Number.isFinite(v)) continue;
+    sum += v;
+    count++;
+  }
+  return count > 0 ? sum / count : 0;
 }
 
 function analyzeTyreTemps(
@@ -246,13 +271,20 @@ function analyzeRideHeights(
   const data: RideHeightSample[] = [];
   for (let i = 0; i < recordCount; i++) {
     if (hiSpeedMask[i] && i % 3 === 0) {
+      const pct = ch.LapDistPct![i] * 100;
+      const lf = heightToMM(ch.LFrideHeight![i]);
+      const rf = heightToMM(ch.RFrideHeight![i]);
+      const lr = heightToMM(ch.LRrideHeight![i]);
+      const rr = heightToMM(ch.RRrideHeight![i]);
+      const speed = speedToKph(ch.Speed![i]);
+      if (![pct, lf, rf, lr, rr, speed].every(Number.isFinite)) continue;
       data.push({
-        pct: ch.LapDistPct![i] * 100,
-        LF: heightToMM(ch.LFrideHeight![i]),
-        RF: heightToMM(ch.RFrideHeight![i]),
-        LR: heightToMM(ch.LRrideHeight![i]),
-        RR: heightToMM(ch.RRrideHeight![i]),
-        speed: speedToKph(ch.Speed![i]),
+        pct,
+        LF: lf,
+        RF: rf,
+        LR: lr,
+        RR: rr,
+        speed,
       });
     }
   }
@@ -283,6 +315,7 @@ function analyzeBottoming(
     const rf = ch.RFrideHeight![i];
     const lr = ch.LRrideHeight![i];
     const rr = ch.RRrideHeight![i];
+    if (![lf, rf, lr, rr].every(Number.isFinite)) continue;
 
     let worstCorner = 'LF';
     let minRH = lf;
@@ -302,6 +335,7 @@ function analyzeBottoming(
     const minRHmm = minRH * 1000;
     if (minRHmm <= ANALYSIS.BOTTOMING_THRESHOLD_MM) {
       const pct = ch.LapDistPct![i] * 100;
+      if (!Number.isFinite(pct)) continue;
       const isKerb = kerbZones.some(([a, b]) => pct >= a && pct <= b);
 
       if (isKerb) kerb++;
@@ -333,7 +367,10 @@ function analyzeShockVelocities(
     const vels: number[] = [];
     for (let i = 1; i < recordCount; i++) {
       if (!hiSpeedMask[i]) continue;
-      vels.push(Math.abs((ch[chName]![i] - ch[chName]![i - 1]) * 1000 / dt));
+      const now = ch[chName]![i];
+      const prev = ch[chName]![i - 1];
+      if (!Number.isFinite(now) || !Number.isFinite(prev)) continue;
+      vels.push(Math.abs((now - prev) * 1000 / dt));
     }
 
     vels.sort((a, b) => a - b);
@@ -363,8 +400,12 @@ function analyzeGForce(
 
   for (let i = 0; i < recordCount; i += 6) {
     if (!validMask[i]) continue;
-    const lat = accelToG(ch.LatAccel![i]);
-    const long = accelToG(ch.LongAccel![i]);
+    const rawLat = ch.LatAccel![i];
+    const rawLong = ch.LongAccel![i];
+    if (!Number.isFinite(rawLat) || !Number.isFinite(rawLong)) continue;
+    const lat = accelToG(rawLat);
+    const long = accelToG(rawLong);
+    if (!Number.isFinite(lat) || !Number.isFinite(long)) continue;
     data.push({ lat, long });
 
     const absLat = Math.abs(lat);
@@ -385,8 +426,13 @@ function analyzeFuel(
     return { start: 0, end: 0, perLap: 0, range: 0 };
   }
 
-  const start = ch.FuelLevel[laps[validLaps[0]].start];
-  const end = ch.FuelLevel[laps[validLaps[validLaps.length - 1]].end];
+  const firstLap = laps[validLaps[0]];
+  const lastLap = laps[validLaps[validLaps.length - 1]];
+  const start = firstFiniteInRange(ch.FuelLevel, firstLap.start, firstLap.end);
+  const end = lastFiniteInRange(ch.FuelLevel, lastLap.start, lastLap.end);
+  if (start == null || end == null) {
+    return { start: 0, end: 0, perLap: 0, range: 0 };
+  }
   const perLap = validLaps.length > 0 ? (start - end) / validLaps.length : 0;
 
   return {
@@ -427,6 +473,7 @@ function analyzeDriverAids(
     if (!validMask[i]) continue;
     for (const s of stats) {
       const v = ch[s.key]![i];
+      if (!Number.isFinite(v)) continue;
       if (v < s.min) s.min = v;
       if (v > s.max) s.max = v;
       s.sum += v;
@@ -542,6 +589,7 @@ function analyzeRARB(
     if (!validMask[i]) continue;
     const spdKph = speedToKph(ch.Speed![i]);
     const value = ch.dcAntiRollRear![i];
+    if (!Number.isFinite(spdKph) || !Number.isFinite(value)) continue;
 
     let bandIdx = -1;
     for (let b = 0; b < bands.length; b++) {
@@ -578,7 +626,10 @@ function analyzeRARB(
     let changes = 0;
     const lap = laps[l];
     for (let i = lap.start + 1; i <= lap.end; i++) {
-      if (Math.abs(ch.dcAntiRollRear![i] - ch.dcAntiRollRear![i - 1]) > 0.01) {
+      const now = ch.dcAntiRollRear![i];
+      const prev = ch.dcAntiRollRear![i - 1];
+      if (!Number.isFinite(now) || !Number.isFinite(prev)) continue;
+      if (Math.abs(now - prev) > 0.01) {
         changes++;
       }
     }
@@ -592,10 +643,14 @@ function analyzeRARB(
     for (let i = lap.start + 1; i <= lap.end; i++) {
       const from = ch.dcAntiRollRear![i - 1];
       const to = ch.dcAntiRollRear![i];
+      if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
       if (Math.abs(to - from) > 0.01) {
+        const pct = ch.LapDistPct ? ch.LapDistPct[i] * 100 : 0;
+        const speed = speedToKph(ch.Speed![i]);
+        if (!Number.isFinite(pct) || !Number.isFinite(speed)) continue;
         bestLapLog.push({
-          pct: ch.LapDistPct ? ch.LapDistPct[i] * 100 : 0,
-          speed: speedToKph(ch.Speed![i]),
+          pct,
+          speed,
           fromValue: from,
           toValue: to,
         });
@@ -622,6 +677,7 @@ function analyzeSplitter(
   for (let i = 0; i < recordCount; i++) {
     if (!hiSpeedMask[i]) continue;
     const h = heightToMM(ch.CFSRrideHeight![i]);
+    if (!Number.isFinite(h)) continue;
 
     if (h < minHeight) minHeight = h;
     sumHeight += h;
@@ -629,10 +685,13 @@ function analyzeSplitter(
     if (h <= 0) bottomingCount++;
 
     if (i % 3 === 0) {
+      const pct = ch.LapDistPct![i] * 100;
+      const speed = speedToKph(ch.Speed![i]);
+      if (!Number.isFinite(pct) || !Number.isFinite(speed)) continue;
       samples.push({
-        pct: ch.LapDistPct![i] * 100,
+        pct,
         height: h,
-        speed: speedToKph(ch.Speed![i]),
+        speed,
       });
     }
   }
@@ -670,9 +729,8 @@ export function analyzeSession(
   const ch = loadChannels(parsed);
   const driver = findDriver(parsed);
 
-  // Set track length for fallback lap window calculation
   const wi = parsed.sessionInfo?.WeekendInfo || {};
-  parsed_weekendInfo_trackLength = wi.TrackLength || '5.8';
+  const fallbackTrackLength = (wi.TrackLength as string) || '5.8';
 
   const header = extractSessionHeader(parsed, driver);
 
@@ -680,7 +738,7 @@ export function analyzeSession(
     return { error: 'Missing critical channels (Speed, Lap, LapDistPct)' };
   }
 
-  const { laps, validLaps } = detectLaps(ch, parsed.recordCount, parsed.tickRate, trackProfile);
+  const { laps, validLaps } = detectLaps(ch, parsed.recordCount, trackProfile, fallbackTrackLength);
 
   if (validLaps.length === 0) {
     return { error: 'No valid laps detected. Session may be too short or lap times outside expected range.' };
@@ -695,21 +753,36 @@ export function analyzeSession(
 
   const hiSpeedMask = new Uint8Array(parsed.recordCount);
   for (let i = 0; i < parsed.recordCount; i++) {
-    if (validMask[i] && speedToKph(ch.Speed![i]) > ANALYSIS.HIGH_SPEED_KPH) {
+    const speed = speedToKph(ch.Speed![i]);
+    if (validMask[i] && Number.isFinite(speed) && speed > ANALYSIS.HIGH_SPEED_KPH) {
       hiSpeedMask[i] = 1;
     }
   }
 
   // Find best lap
-  const lapTimes: LapTime[] = validLaps.map((l) => ({
-    lap: l,
-    time: laps[l].duration,
-    maxSpeed: laps[l].maxSpeed,
-    timeStr: `${Math.floor(laps[l].duration / 60)}:${(laps[l].duration % 60).toFixed(2).padStart(5, '0')}`,
-  }));
-  const bestTime = Math.min(...lapTimes.map((l) => l.time));
-  const bestLap = lapTimes.find((l) => Math.abs(l.time - bestTime) < 0.01);
-  const bestLapIdx = bestLap?.lap ?? validLaps[0];
+  const lapTimes: LapTime[] = [];
+  let bestTime = Infinity;
+  let bestLapIdx = validLaps[0];
+  for (const l of validLaps) {
+    const lap = laps[l];
+    if (!Number.isFinite(lap.duration)) continue;
+    const maxSpeed = Number.isFinite(lap.maxSpeed) ? lap.maxSpeed : 0;
+    const time = lap.duration;
+    lapTimes.push({
+      lap: l,
+      time,
+      maxSpeed,
+      timeStr: `${Math.floor(time / 60)}:${(time % 60).toFixed(2).padStart(5, '0')}`,
+    });
+    if (time < bestTime) {
+      bestTime = time;
+      bestLapIdx = l;
+    }
+  }
+
+  if (lapTimes.length === 0 || !Number.isFinite(bestTime)) {
+    return { error: 'No valid lap times available after telemetry quality filtering.' };
+  }
 
   // Run all analyses
   const tyreTempData = analyzeTyreTemps(ch, laps, validLaps);
