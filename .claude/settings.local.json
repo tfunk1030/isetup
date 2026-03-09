@@ -1,0 +1,7 @@
+{
+  "enabledMcpjsonServers": [
+    "spawner",
+    "codex"
+  ],
+  "enableAllProjectMcpServers": true
+}
