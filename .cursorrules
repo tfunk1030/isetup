@@ -1,0 +1,21 @@
+# iRacing GTP Telemetry & Setup Engineering
+
+This repo is for iRacing GTP Hypercar telemetry analysis and AI-assisted setup engineering.
+
+## Project structure
+
+- **gtp-telemetry/** — React/Vite/TypeScript web app for browser-based IBT analysis and dashboards
+- **iracing-gtp-engineer-plugin/** — Claude plugin + skill with `parse_ibt.py` for AI-assisted setup work
+- **Root** — Spec, reference docs, and shared skill definition
+
+## Key reference docs
+
+- `per-car-quirks.md` — Per-car parameter quirks (BMW, Cadillac, Porsche, Acura, Ferrari)
+- `telemetry-channels.md` — Telemetry channel definitions and units
+- `ibt-parsing-guide.md` — IBT binary format spec and parsing logic
+
+## Technical constraints
+
+- When editing IBT parsing or telemetry logic, preserve compatibility with the binary format spec in `ibt-parsing-guide.md`
+- The plugin's `parse_ibt.py` and the web app's IBT parser in `gtp-telemetry/src/lib/` must stay aligned on channel names and units
+- GTP cars: BMW M Hybrid V8, Porsche 963, Cadillac V-Series.R, Acura ARX-06, Ferrari 499P
