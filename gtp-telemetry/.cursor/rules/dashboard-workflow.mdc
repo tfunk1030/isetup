@@ -1,0 +1,27 @@
+---
+description: Guidance for dashboard, state, and UI changes
+globs: src/App.tsx,src/store/session-store.ts,src/components/**/*.tsx,src/lib/pdf-export.ts
+alwaysApply: false
+---
+
+# Dashboard and UI workflow guidance
+
+Use this rule when editing the upload flow, session state, chart panels, or export UI.
+
+## Architectural expectations
+
+- `src/store/session-store.ts` is the bridge between uploaded files and rendered analysis.
+- `src/App.tsx` decides whether the user sees the upload flow or the dashboard.
+- Most dashboard components are consumers of the analysis payload; avoid duplicating analysis logic in UI components.
+
+## UI change guidelines
+
+- Keep chart components focused on presentation and light derivation.
+- Prefer adding or refining computed data in `analysis-engine.ts` rather than scattering calculations across panels.
+- Maintain loading, error, and empty-state behavior when touching the upload flow.
+- If a component depends on optional analysis fields, guard for missing data rather than assuming everything is populated.
+
+## PDF export
+
+- `src/lib/pdf-export.ts` is part of the user-visible workflow.
+- If dashboard content changes materially, think about whether export output should also change.
