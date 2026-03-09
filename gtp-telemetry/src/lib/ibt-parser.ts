@@ -6,6 +6,11 @@
 import yaml from 'js-yaml';
 import type { ChannelVar, IBTParsed, SessionInfo } from './types';
 
+function stripNullTerminator(value: string): string {
+  const nullIdx = value.indexOf('\0');
+  return nullIdx === -1 ? value : value.slice(0, nullIdx);
+}
+
 export function parseIBT(buffer: ArrayBuffer): IBTParsed {
   if (buffer.byteLength < 144) {
     throw new Error('File too small to be a valid IBT file (minimum 144 bytes for header)');
@@ -34,6 +39,15 @@ export function parseIBT(buffer: ArrayBuffer): IBTParsed {
   if (recordCount <= 0) {
     throw new Error(`Invalid record count: ${recordCount}. File may be empty or corrupted.`);
   }
+  if (sessionInfoLen < 0 || sessionInfoOffset < 0 || sessionInfoOffset + sessionInfoLen > buffer.byteLength) {
+    throw new Error('Invalid session info block offsets. File may be corrupted.');
+  }
+  if (varHeaderOffset < 0 || varHeaderOffset + numVars * 144 > buffer.byteLength) {
+    throw new Error('Invalid variable header table offsets. File may be corrupted.');
+  }
+  if (bufLen <= 0 || bufOffset < 0) {
+    throw new Error('Invalid sample buffer header values. File may be corrupted.');
+  }
   if (bufOffset + recordCount * bufLen > buffer.byteLength) {
     throw new Error('File appears truncated. Data buffer extends beyond file size.');
   }
@@ -42,14 +56,14 @@ export function parseIBT(buffer: ArrayBuffer): IBTParsed {
   let sessionInfo: SessionInfo = {};
   try {
     const siBytes = new Uint8Array(buffer, sessionInfoOffset, sessionInfoLen);
-    const siStr = decoder.decode(siBytes).replace(/\x00+$/, '');
+    const siStr = stripNullTerminator(decoder.decode(siBytes));
     sessionInfo = (yaml.load(siStr) as SessionInfo) || {};
   } catch (e) {
     console.warn('YAML parse warning, attempting simple parse:', e);
     // Fallback: try to extract what we can
     try {
       const siBytes = new Uint8Array(buffer, sessionInfoOffset, sessionInfoLen);
-      const siStr = decoder.decode(siBytes).replace(/\x00+$/, '');
+      const siStr = stripNullTerminator(decoder.decode(siBytes));
       sessionInfo = parseSimpleYAML(siStr);
     } catch {
       sessionInfo = {};
@@ -64,11 +78,11 @@ export function parseIBT(buffer: ArrayBuffer): IBTParsed {
     const voffset = view.getInt32(base + 4, true);
     const vcount = view.getInt32(base + 8, true);
     const nameBytes = new Uint8Array(buffer, base + 16, 32);
-    const name = decoder.decode(nameBytes).replace(/\x00+$/, '');
+    const name = stripNullTerminator(decoder.decode(nameBytes));
     const descBytes = new Uint8Array(buffer, base + 48, 64);
-    const desc = decoder.decode(descBytes).replace(/\x00+$/, '');
+    const desc = stripNullTerminator(decoder.decode(descBytes));
     const unitBytes = new Uint8Array(buffer, base + 112, 32);
-    const unit = decoder.decode(unitBytes).replace(/\x00+$/, '');
+    const unit = stripNullTerminator(decoder.decode(unitBytes));
     vars[name] = { type: vtype, offset: voffset, count: vcount, desc, unit };
   }
 
@@ -100,7 +114,8 @@ function parseSimpleYAML(str: string): SessionInfo {
   ];
   const lines = str.split('\n');
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (!line.trim() || line.trim().startsWith('#')) continue;
     const indent = line.search(/\S/);
     const content = line.trim();
@@ -129,9 +144,8 @@ function parseSimpleYAML(str: string): SessionInfo {
       const key = content.slice(0, colonIdx).trim();
       const val = content.slice(colonIdx + 1).trim();
       if (val === '') {
-        const nextIdx = lines.indexOf(line) + 1;
         let nextLine = '';
-        for (let j = nextIdx; j < lines.length; j++) {
+        for (let j = i + 1; j < lines.length; j++) {
           if (lines[j].trim()) {
             nextLine = lines[j].trim();
             break;
