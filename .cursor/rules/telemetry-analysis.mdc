@@ -25,7 +25,7 @@ Use this rule when working on IBT parsing, unit handling, analysis heuristics, o
 
 ## Units and conversions
 
-Raw telemetry units differ from UI-facing units. Convert at the display layer, not in the analysis engine (engine works in SI units).
+Raw telemetry units differ from UI-facing units. The current pipeline converts some values inside `analysis-engine.ts` for downstream consumers (for example pressures, ride heights, g-forces, and speed bands), while other values are still formatted at the UI/export layer. Preserve the existing contract unless you intentionally refactor every consumer.
 
 | Channel | Raw | Display | Conversion |
 |---------|-----|---------|------------|
@@ -60,7 +60,7 @@ Per-track profiles define kerb zones, valid lap time windows, and speed threshol
 - Always guard against missing channels
 - Use the last 40-60% of each lap for stabilized tyre temperature readings
 - Filter laps by the track profile's `validLapWindow` to exclude out-laps and in-laps
-- When touching conversions, update all downstream assumptions consistently
+- When touching conversions, update `analysis-engine.ts`, UI panels, and PDF export together so downstream assumptions stay aligned
 
 ## Domain references
 

@@ -78,9 +78,9 @@ src/
 
 The repository root includes shared AI-assistant guidance:
 
-- `.cursor/environment.json` for install and dev-terminal setup
-- `.cursor/mcp.json` for default MCP servers
-- `.cursor/rules/` for parser, dashboard, plugin, and QA guidance
-- `AGENTS.md` for a repo-wide agent playbook
+- `../.cursor/environment.json` for install and dev-terminal setup
+- `../.cursor/mcp.json` for default MCP servers
+- `../.cursor/rules/` for parser, dashboard, plugin, and QA guidance
+- `../AGENTS.md` for a repo-wide agent playbook
 
-If you are working with an AI coding agent, start with `AGENTS.md` at the repo root.
+If you are working with an AI coding agent, start with `../AGENTS.md` at the repo root.
