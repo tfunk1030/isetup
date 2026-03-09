@@ -1,0 +1,64 @@
+---
+description: React component patterns and conventions for dashboard panels and shared UI
+globs: gtp-telemetry/src/components/**/*.tsx
+---
+
+# React Component Conventions
+
+## Dashboard Panels (`components/dashboard/`)
+
+Each panel corresponds to one item in the 14-step analysis checklist:
+
+1. SessionHeader — car, track, driver, conditions
+2. LapTimesChart — per-lap times with max speed
+3. TyreTempsPanel — surface temps (O/M/I) per corner per lap
+4. TyrePressuresChart — hot pressures per corner per lap
+5. TyreWearPanel — tread remaining per corner
+6. ConditioningTrend — temp conditioning rate over stint
+7. RideHeightScatter — ride heights at speed
+8. SplitterAnalysis — center front splitter ride height
+9. ShockVelocityPanel — shock velocity stats (p95, p99, peak)
+10. GForceScatter — lateral vs longitudinal g scatter
+11. EngineTempsPanel — water and oil temps per lap
+12. FuelPanel — consumption rate and range
+13. DriverAidsPanel — brake bias, TC, ABS changes
+14. RARBAnalysis — front/rear ARB blade analysis
+15. SetupDump — raw setup YAML display
+
+### Panel Pattern
+
+```tsx
+import { Card } from '../shared/Card';
+import type { SessionAnalysis } from '../../lib/types';
+
+interface Props {
+  analysis: SessionAnalysis;
+}
+
+export function PanelName({ analysis }: Props) {
+  // Destructure what you need from analysis
+  // Use Card wrapper with title and icon
+  return (
+    <Card title="Panel Title" icon="🔧">
+      {/* content */}
+    </Card>
+  );
+}
+```
+
+### Rules
+- Always accept `analysis: SessionAnalysis` as the prop.
+- Wrap content in the `Card` component from `../shared/Card`.
+- Use `StatusBadge` for threshold-based status indicators (COLD/OK/HOT/HIGH/SAFE/RISK).
+- Use `MetricRow` for label/value pairs with optional units and status.
+- Use thresholds from `src/lib/constants.ts` — never hardcode threshold values.
+- Recharts charts use colors from the `COLORS` constant.
+
+## Shared Components (`components/shared/`)
+
+- `Card` — Panel container with title, icon, optional grid span.
+- `TabBar` — Tab navigation for the dashboard sections.
+- `StatusBadge` — Colored status pill (uses `STATUS_COLORS` mapping).
+- `MetricRow` — Single metric display: label, value, unit, status.
+
+Keep shared components generic — no telemetry-specific logic in shared components.
