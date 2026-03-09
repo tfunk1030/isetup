@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Card } from '../shared/Card';
 import { StatusBadge } from '../shared/StatusBadge';
-import { generateAISetupBrief, hasAIRecommendationConfig } from '../../lib/ai-recommendations';
+import { generateAISetupBrief, getAIRecommendationMode, hasAIRecommendationConfig } from '../../lib/ai-recommendations';
 import type { AISetupBrief, SessionAnalysis } from '../../lib/types';
 
 interface Props {
@@ -57,6 +57,12 @@ function sourceLabel(source: AISetupBrief['source']): { icon: string; label: str
   return { icon: '\u2699\uFE0F', label: 'Rule Engine' };
 }
 
+function exactnessLabel(exactness: AISetupBrief['recommendations'][number]['exactness']): { text: string; status: 'OK' | 'HIGH' | 'RISK' } {
+  if (exactness === 'exact') return { text: 'Exact', status: 'OK' };
+  if (exactness === 'blocked') return { text: 'Blocked', status: 'RISK' };
+  return { text: 'Inferred', status: 'HIGH' };
+}
+
 export function AIRecommendationAssistant({ analysis }: Props) {
   const [loading, setLoading] = useState(false);
   const [brief, setBrief] = useState<AISetupBrief | null>(null);
@@ -65,9 +71,10 @@ export function AIRecommendationAssistant({ analysis }: Props) {
   useEffect(() => {
     setBrief(null);
     setError(null);
-  }, [analysis.header.car, analysis.header.track, analysis.bestTime]);
+  }, [analysis.header.car, analysis.header.track, analysis.bestTime, analysis.header.samples, analysis.validLaps.length]);
 
   const configured = hasAIRecommendationConfig();
+  const mode = getAIRecommendationMode();
 
   const runAssistant = async () => {
     setLoading(true);
@@ -98,12 +105,17 @@ export function AIRecommendationAssistant({ analysis }: Props) {
         disabled={loading}
         className="bg-[var(--color-accent)] text-black border-none px-4 py-2 rounded-md cursor-pointer text-[13px] font-semibold mb-4 hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {loading ? 'Generating...' : configured ? 'Generate Dual-Model Brief' : 'Generate Local Brief'}
+        {loading ? 'Generating...' : mode === 'dual-model' ? 'Generate Dual-Model Brief' : mode === 'single-model' ? 'Generate AI Brief' : 'Generate Local Brief'}
       </button>
 
       {!configured && (
         <p className="text-xs text-[var(--color-text-muted)] mb-3">
-          Configure `VITE_OPENAI_API_KEY` to enable cloud AI synthesis. Using local rule-engine fallback otherwise.
+          Configure `VITE_GEMINI_API_KEY` and/or `VITE_ANTHROPIC_API_KEY` to enable cloud AI synthesis. Using local rule-engine fallback otherwise.
+        </p>
+      )}
+      {configured && mode === 'single-model' && (
+        <p className="text-xs text-[var(--color-text-muted)] mb-3">
+          One provider is configured, so this run will use single-model synthesis and fall back to the rule engine if that provider fails.
         </p>
       )}
 
@@ -153,17 +165,74 @@ export function AIRecommendationAssistant({ analysis }: Props) {
             </div>
           </BriefSection>
 
-          {/* Priority actions with numbered indicators */}
+          {/* Structured recommendations */}
           <BriefSection icon={'\u{1F3AF}'} title="Priority Actions">
             <div className="space-y-2">
-              {brief.priorityActions.map((item, idx) => (
-                <div key={item} className="flex items-start gap-2.5">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-black text-[11px] font-bold flex items-center justify-center mt-0.5">
-                    {idx + 1}
-                  </span>
-                  <p className="text-sm text-[var(--color-text)]">{item}</p>
-                </div>
-              ))}
+              {brief.recommendations.map((item, idx) => {
+                const exactness = exactnessLabel(item.exactness);
+                return (
+                  <div key={`${item.parameterKey}-${idx}`} className="rounded-lg border border-[var(--color-card-border)] p-3">
+                    <div className="flex items-start gap-2.5 mb-2">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[var(--color-accent)] text-black text-[11px] font-bold flex items-center justify-center mt-0.5">
+                        {idx + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <p className="text-sm font-semibold text-[var(--color-text)]">{item.displayName}</p>
+                          <StatusBadge status={exactness.status} />
+                          <span className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)]">{exactness.text}</span>
+                        </div>
+                        <p className="text-sm text-[var(--color-text)]">
+                          <span className="font-mono text-[var(--color-text-dim)]">{item.currentValue}</span>
+                          <span className="mx-2 text-[var(--color-accent)] font-bold">{'\u2192'}</span>
+                          <span className="font-mono font-semibold">{item.targetValue}</span>
+                          <span className="ml-2 text-[var(--color-text-muted)]">({item.delta})</span>
+                        </p>
+                        <p className="text-xs text-[var(--color-text-muted)] mt-1">{item.reason}</p>
+                      </div>
+                    </div>
+
+                    {item.evidence.length > 0 && (
+                      <ul className="space-y-1 mb-2">
+                        {item.evidence.map((evidence) => (
+                          <li key={evidence} className="flex items-start gap-2 text-xs text-[var(--color-text-dim)]">
+                            <span className="text-[var(--color-accent)] mt-0.5">•</span>
+                            {evidence}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {item.verification.length > 0 && (
+                      <div className="text-xs text-[var(--color-text-dim)] mb-2">
+                        <p className="uppercase tracking-wider text-[10px] text-[var(--color-text-muted)] mb-1">Verify After Change</p>
+                        <ul className="space-y-1">
+                          {item.verification.map((check) => (
+                            <li key={check} className="flex items-start gap-2">
+                              <span className="text-[var(--color-text-muted)] mt-0.5">•</span>
+                              {check}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {item.assumptions.length > 0 && (
+                      <div className="text-xs text-[var(--color-text-muted)]">
+                        <p className="uppercase tracking-wider text-[10px] mb-1">Limits / Assumptions</p>
+                        <ul className="space-y-1">
+                          {item.assumptions.map((assumption) => (
+                            <li key={assumption} className="flex items-start gap-2">
+                              <span className="mt-0.5">•</span>
+                              {assumption}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </BriefSection>
 

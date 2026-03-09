@@ -255,6 +255,8 @@ export interface RecommendationSpecific {
   delta: string;
 }
 
+export type RecommendationExactness = 'exact' | 'inferred' | 'blocked';
+
 export interface SetupRecommendation {
   id: string;
   category: RecommendationCategory;
@@ -266,6 +268,11 @@ export interface SetupRecommendation {
   severity: RecommendationSeverity;
   evidence: string[];
   specifics?: RecommendationSpecific[];
+  parameterKey?: string;
+  exactness?: RecommendationExactness;
+  verify?: string[];
+  blockedBy?: string[];
+  source?: 'rule-engine';
 }
 
 export interface DataQualityReport {
@@ -279,9 +286,79 @@ export interface DataQualityReport {
   notes: string[];
 }
 
+export type SetupParameterGroup =
+  | 'aero'
+  | 'platform'
+  | 'suspension'
+  | 'dampers'
+  | 'alignment'
+  | 'brakes'
+  | 'diff'
+  | 'tyres'
+  | 'electronics';
+
+export interface NormalizedSetupParameter {
+  parameterKey: string;
+  displayName: string;
+  group: SetupParameterGroup;
+  axle?: 'front' | 'rear';
+  corner?: 'LF' | 'RF' | 'LR' | 'RR';
+  sourcePath: string;
+  rawValue: string;
+  displayValue: string;
+  unit?: string;
+  valueType: 'number' | 'string';
+  numericValue?: number;
+  confidence: ConfidenceLevel;
+}
+
+export interface NormalizedSetup {
+  architecture: 'lmdh' | 'lmh' | 'unknown';
+  parameters: NormalizedSetupParameter[];
+  missingKeys: string[];
+  unsupportedKeys: string[];
+}
+
+export type ReasoningPhase = 'entry' | 'mid' | 'exit' | 'platform' | 'tyres';
+export type ReasoningDirection =
+  | 'stable'
+  | 'understeer-risk'
+  | 'oversteer-risk'
+  | 'traction-risk'
+  | 'bottoming-risk'
+  | 'temperature-risk'
+  | 'mixed';
+
+export interface TelemetryReasoningSignal {
+  id: string;
+  phase: ReasoningPhase;
+  summary: string;
+  direction: ReasoningDirection;
+  confidence: ConfidenceLevel;
+  evidence: string[];
+  candidateParameterKeys: string[];
+}
+
+export interface AIRecommendationItem {
+  parameterKey: string;
+  displayName: string;
+  currentValue: string;
+  targetValue: string;
+  delta: string;
+  unit?: string;
+  reason: string;
+  evidence: string[];
+  confidence: ConfidenceLevel;
+  exactness: RecommendationExactness;
+  verification: string[];
+  assumptions: string[];
+  source: 'ai' | 'rule-engine';
+  currentSourcePath?: string;
+}
+
 export interface AISetupBrief {
   summary: string;
-  priorityActions: string[];
+  recommendations: AIRecommendationItem[];
   watchItems: string[];
   confidenceNote: string;
   reasoning: string[];
@@ -293,6 +370,7 @@ export interface AISetupBrief {
 export interface SessionAnalysis {
   header: SessionHeader;
   setup: [string, unknown][];
+  normalizedSetup: NormalizedSetup;
   lapTimes: LapTime[];
   bestTime: number;
   tyreTempData: TyreTempLap[];
@@ -312,6 +390,7 @@ export interface SessionAnalysis {
   rarb: RARBAnalysis | null;
   splitter: SplitterData | null;
   validLaps: number[];
+  telemetryReasoning: TelemetryReasoningSignal[];
   recommendations: SetupRecommendation[];
   dataQuality: DataQualityReport;
   carProfileId: string | null;

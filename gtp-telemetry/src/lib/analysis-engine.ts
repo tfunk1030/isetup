@@ -33,11 +33,15 @@ import type {
   Driver,
   ConfidenceLevel,
   DataQualityReport,
+  NormalizedSetup,
   SetupRecommendation,
   RecommendationSpecific,
   RecommendationSeverity,
+  TelemetryReasoningSignal,
+  TyreCornerTemp,
 } from './types';
 import { ANALYSIS_CHANNELS } from './types';
+import { flattenSetup, getNormalizedParameter, normalizeSetup } from './setup-normalization';
 
 type Channels = Record<string, Float64Array | null>;
 
@@ -709,19 +713,6 @@ function analyzeSplitter(
   };
 }
 
-function flattenSetup(obj: Record<string, unknown>, prefix = ''): [string, unknown][] {
-  const out: [string, unknown][] = [];
-  for (const [k, v] of Object.entries(obj || {})) {
-    const key = prefix ? `${prefix}.${k}` : k;
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      out.push(...flattenSetup(v as Record<string, unknown>, key));
-    } else {
-      out.push([key, v]);
-    }
-  }
-  return out;
-}
-
 const CRITICAL_CHANNELS: readonly string[] = ['SessionTime', 'Lap', 'LapDistPct', 'Speed'];
 
 function pickSeverity(warn: boolean, critical: boolean): RecommendationSeverity {
@@ -808,6 +799,209 @@ function buildDataQualityReport(
   };
 }
 
+function averageTyreCorner(temp: TyreCornerTemp): number {
+  return (temp.O + temp.M + temp.I) / 3;
+}
+
+function stdDev(values: number[]): number {
+  if (values.length === 0) return 0;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+function formatNumeric(value: number, unit?: string, digits = 1): string {
+  return `${value.toFixed(digits)}${unit ? ` ${unit}` : ''}`;
+}
+
+function buildNumericSpecific(
+  parameter: string,
+  currentValue: number,
+  targetValue: number,
+  unit: string,
+  digits = 1
+): RecommendationSpecific {
+  const deltaValue = targetValue - currentValue;
+  return {
+    parameter,
+    current: formatNumeric(currentValue, unit, digits),
+    target: formatNumeric(targetValue, unit, digits),
+    delta: `${deltaValue > 0 ? '+' : ''}${deltaValue.toFixed(digits)} ${unit}`.trim(),
+  };
+}
+
+function buildTelemetryReasoning(args: {
+  carProfile?: CarProfile;
+  tyreTempData: TyreTempLap[];
+  tyreWearData: TyreWearLap[];
+  bottoming: BottomingResult;
+  shockVelStats: Record<string, ShockVelCorner>;
+  aids: Record<string, DriverAid>;
+  splitter: SplitterData | null;
+  rideHeightData: RideHeightSample[];
+  dataQuality: DataQualityReport;
+}): TelemetryReasoningSignal[] {
+  const {
+    carProfile,
+    tyreTempData,
+    tyreWearData,
+    bottoming,
+    shockVelStats,
+    aids,
+    splitter,
+    rideHeightData,
+    dataQuality,
+  } = args;
+  const signals: TelemetryReasoningSignal[] = [];
+  const lastTemps = tyreTempData[tyreTempData.length - 1];
+  const lastWear = tyreWearData[tyreWearData.length - 1];
+
+  if (lastTemps) {
+    const frontAvg = (averageTyreCorner(lastTemps.LF) + averageTyreCorner(lastTemps.RF)) / 2;
+    const rearAvg = (averageTyreCorner(lastTemps.LR) + averageTyreCorner(lastTemps.RR)) / 2;
+    const axleDelta = frontAvg - rearAvg;
+    const midDirection = axleDelta >= 6
+      ? 'understeer-risk'
+      : axleDelta <= -6
+        ? 'oversteer-risk'
+        : 'stable';
+    const midSummary = midDirection === 'understeer-risk'
+      ? 'Front axle is carrying materially more tyre load than the rear, pointing to mid-corner understeer risk.'
+      : midDirection === 'oversteer-risk'
+        ? 'Rear axle is carrying materially more tyre load than the front, pointing to mid-corner oversteer risk.'
+        : 'Front/rear tyre loading is broadly balanced through the lap.';
+    signals.push({
+      id: 'mid-corner-balance',
+      phase: 'mid',
+      summary: midSummary,
+      direction: midDirection,
+      confidence: dataQuality.sectionConfidence.tyres,
+      evidence: [
+        `Front axle avg surface temp: ${frontAvg.toFixed(1)}°C`,
+        `Rear axle avg surface temp: ${rearAvg.toFixed(1)}°C`,
+        `Front-rear delta: ${axleDelta > 0 ? '+' : ''}${axleDelta.toFixed(1)}°C`,
+      ],
+      candidateParameterKeys: ['suspension.frontArbBlades', 'suspension.rearArbBlades', 'diff.rearPreload'],
+    });
+
+    const brakeBias = aids['Brake Bias'];
+    if (brakeBias && carProfile) {
+      const biasDelta = brakeBias.avg - carProfile.defaultBrakeBias;
+      const entryDirection = biasDelta >= 1.0 && axleDelta >= 4
+        ? 'understeer-risk'
+        : biasDelta <= -1.0 && axleDelta <= -4
+          ? 'oversteer-risk'
+          : 'stable';
+      const entrySummary = entryDirection === 'understeer-risk'
+        ? 'Entry balance is front-limited: brake bias is forward of baseline while the fronts are working hotter than the rears.'
+        : entryDirection === 'oversteer-risk'
+          ? 'Entry balance is rear-limited: brake bias is rearward of baseline while the rear axle is running hotter.'
+          : 'Brake-balance evidence does not show a strong entry-phase imbalance.';
+      signals.push({
+        id: 'entry-balance',
+        phase: 'entry',
+        summary: entrySummary,
+        direction: entryDirection,
+        confidence: dataQuality.sectionConfidence.setup,
+        evidence: [
+          `Observed brake bias: ${brakeBias.avg.toFixed(1)}%`,
+          `Car baseline brake bias: ${carProfile.defaultBrakeBias.toFixed(1)}%`,
+          `Bias delta: ${biasDelta > 0 ? '+' : ''}${biasDelta.toFixed(1)}%`,
+        ],
+        candidateParameterKeys: ['brakes.bias', 'suspension.frontArbBlades', 'platform.frontHeavePerch'],
+      });
+    }
+  }
+
+  const tc1 = aids.TC1;
+  const tc2 = aids.TC2;
+  if (lastWear) {
+    const frontWear = (lastWear.LF.avg + lastWear.RF.avg) / 2;
+    const rearWear = (lastWear.LR.avg + lastWear.RR.avg) / 2;
+    const rearWearLoss = frontWear - rearWear;
+    const activeTc = (tc1 && !tc1.constant) || (tc2 && !tc2.constant);
+    const exitDirection = rearWearLoss >= 3 || activeTc ? 'traction-risk' : 'stable';
+    signals.push({
+      id: 'exit-traction',
+      phase: 'exit',
+      summary: exitDirection === 'traction-risk'
+        ? 'Rear tyres are doing disproportionate work on exit, with either TC activity or accelerated rear wear indicating traction-limited balance.'
+        : 'Rear tyre wear and TC activity do not show a strong exit-traction issue.',
+      direction: exitDirection,
+      confidence: dataQuality.sectionConfidence.tyres,
+      evidence: [
+        `Front tread remaining avg: ${frontWear.toFixed(1)}%`,
+        `Rear tread remaining avg: ${rearWear.toFixed(1)}%`,
+        ...(tc1 ? [`TC1 range: ${tc1.min.toFixed(1)}-${tc1.max.toFixed(1)}`] : []),
+        ...(tc2 ? [`TC2 range: ${tc2.min.toFixed(1)}-${tc2.max.toFixed(1)}`] : []),
+      ],
+      candidateParameterKeys: ['diff.rearPreload', 'suspension.rearArbBlades', 'alignment.rearCamber'],
+    });
+  }
+
+  const rideHeightSigma = rideHeightData.length > 0
+    ? stdDev(rideHeightData.map((sample) => (sample.LF + sample.RF) / 2))
+    : 0;
+  const maxShockPeak = Object.values(shockVelStats).reduce((peak, stats) => Math.max(peak, stats.peak), 0);
+  const platformRisk = bottoming.clean >= RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_WARN
+    || (splitter?.minHeight ?? 999) <= RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM
+    || maxShockPeak >= RECOMMENDATION.SHOCK_PEAK_WARN_MM_S
+    || rideHeightSigma >= 4.5;
+  signals.push({
+    id: 'platform-stability',
+    phase: 'platform',
+    summary: platformRisk
+      ? 'High-speed platform support is marginal: the floor is getting too close to the track or the dampers are seeing large spikes.'
+      : 'High-speed ride-height control looks stable in the available dataset.',
+    direction: platformRisk ? 'bottoming-risk' : 'stable',
+    confidence: dataQuality.sectionConfidence.platform,
+    evidence: [
+      `Clean bottoming events: ${bottoming.clean}`,
+      ...(splitter ? [`Min splitter height: ${splitter.minHeight.toFixed(1)} mm`] : []),
+      `Front ride-height sigma at speed: ${rideHeightSigma.toFixed(1)} mm`,
+      `Peak shock velocity: ${maxShockPeak.toFixed(0)} mm/s`,
+    ],
+    candidateParameterKeys: ['platform.frontHeavePerch', 'platform.frontPushrod', 'dampers.RF.hsComp'],
+  });
+
+  if (lastTemps) {
+    for (const corner of ['LF', 'RF', 'LR', 'RR'] as const) {
+      const temp = lastTemps[corner];
+      const spread = Math.abs(temp.I - temp.O);
+      const crownDelta = temp.M - (temp.O + temp.I) / 2;
+      if (spread < RECOMMENDATION.TYRE_TEMP_SPREAD_WARN_C && Math.abs(crownDelta) < RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C) {
+        continue;
+      }
+      signals.push({
+        id: `tyre-shape-${corner.toLowerCase()}`,
+        phase: 'tyres',
+        summary: `${corner} contact patch is imbalanced, so pressure/camber recommendations should be treated as tyre-shape corrections rather than pure temperature management.`,
+        direction: 'temperature-risk',
+        confidence: dataQuality.sectionConfidence.tyres,
+        evidence: [
+          `${corner} outer/mid/inner: ${temp.O.toFixed(1)} / ${temp.M.toFixed(1)} / ${temp.I.toFixed(1)}°C`,
+          `${corner} inner-outer spread: ${spread.toFixed(1)}°C`,
+          `${corner} center delta: ${crownDelta > 0 ? '+' : ''}${crownDelta.toFixed(1)}°C`,
+        ],
+        candidateParameterKeys: [`tyres.${corner}.startingPressure`, corner.includes('F') ? 'alignment.frontCamber' : 'alignment.rearCamber'],
+      });
+    }
+  }
+
+  return signals;
+}
+
+function buildParameterSpecific(
+  parameter: ReturnType<typeof getNormalizedParameter>,
+  targetValue: number,
+  digits = 1
+): RecommendationSpecific[] {
+  if (!parameter || parameter.valueType !== 'number' || parameter.numericValue == null || !parameter.unit) {
+    return [];
+  }
+  return [buildNumericSpecific(parameter.displayName, parameter.numericValue, targetValue, parameter.unit, digits)];
+}
+
 function formatAidsContext(carProfile?: CarProfile): string {
   if (!carProfile) return 'Aids';
   return carProfile.arbValueType === 'indexed'
@@ -877,6 +1071,8 @@ function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupR
 function buildRecommendations(args: {
   carProfile?: CarProfile;
   trackProfile?: TrackProfile;
+  normalizedSetup: NormalizedSetup;
+  telemetryReasoning: TelemetryReasoningSignal[];
   tyreTempData: TyreTempLap[];
   tyrePressureData: TyrePressureLap[];
   tyreWearData: TyreWearLap[];
@@ -894,6 +1090,8 @@ function buildRecommendations(args: {
   const {
     carProfile,
     trackProfile,
+    normalizedSetup,
+    telemetryReasoning,
     tyreTempData,
     tyrePressureData,
     tyreWearData,
@@ -914,18 +1112,26 @@ function buildRecommendations(args: {
     const avgFrontRH = rideHeightData.length > 0
       ? rideHeightData.reduce((s, r) => s + (r.LF + r.RF) / 2, 0) / rideHeightData.length
       : null;
-    const deltaRH = critical ? 3 : 2;
+    const frontHeavePerch = getNormalizedParameter(normalizedSetup, 'platform.frontHeavePerch');
+    const deltaRH = critical ? 2 : 1.5;
     const targetRH = avgFrontRH != null ? avgFrontRH + deltaRH : null;
-    const specifics: RecommendationSpecific[] = avgFrontRH != null
-      ? [{ parameter: 'Front ride height', current: `${avgFrontRH.toFixed(1)} mm`, target: `~${targetRH!.toFixed(0)} mm`, delta: `+${deltaRH} mm` }]
-      : [];
+    const exactHeaveTarget = frontHeavePerch?.valueType === 'number' && frontHeavePerch.numericValue != null
+      ? frontHeavePerch.numericValue - deltaRH
+      : null;
+    const specifics: RecommendationSpecific[] = exactHeaveTarget != null
+      ? buildParameterSpecific(frontHeavePerch, exactHeaveTarget)
+      : avgFrontRH != null
+        ? [{ parameter: 'Front ride height at speed', current: `${avgFrontRH.toFixed(1)} mm`, target: `~${targetRH!.toFixed(1)} mm`, delta: `+${deltaRH.toFixed(1)} mm` }]
+        : [];
     recommendations.push({
       id: 'platform-bottoming',
       category: 'PLATFORM',
       title: 'Reduce clean-track bottoming',
-      action: avgFrontRH != null
-        ? `Raise front ride height from ${avgFrontRH.toFixed(1)} mm to ~${targetRH!.toFixed(0)} mm (+${deltaRH} mm) to eliminate clean-track bottoming.`
-        : 'Raise front ride height and/or increase high-speed compression support to protect platform.',
+      action: exactHeaveTarget != null && frontHeavePerch
+        ? `Reduce ${frontHeavePerch.displayName} from ${frontHeavePerch.displayValue} to ${formatNumeric(exactHeaveTarget, frontHeavePerch.unit)} to add front platform preload without blindly chasing static ride height.`
+        : avgFrontRH != null
+          ? `Add front platform support to move front ride height at speed from ${avgFrontRH.toFixed(1)} mm toward ~${targetRH!.toFixed(1)} mm.`
+          : 'Add front heave preload and/or high-speed compression support to protect the platform.',
       rationale: 'Frequent clean-track strikes indicate aerodynamic platform collapse away from kerbs.',
       confidence: dataQuality.sectionConfidence.platform,
       severity: pickSeverity(true, critical),
@@ -935,6 +1141,11 @@ function buildRecommendations(args: {
         ...(avgFrontRH != null ? [`Avg front ride height at speed: ${avgFrontRH.toFixed(1)} mm`] : []),
       ],
       specifics,
+      parameterKey: frontHeavePerch?.parameterKey,
+      exactness: exactHeaveTarget != null ? 'exact' : 'inferred',
+      verify: ['Re-check clean bottoming count on the next 2-3 push laps.', 'Confirm front ride height sigma stays under control at >200 km/h.'],
+      blockedBy: exactHeaveTarget == null ? ['Front heave perch value was not found in the parsed setup.'] : undefined,
+      source: 'rule-engine',
     });
   }
 
@@ -943,11 +1154,17 @@ function buildRecommendations(args: {
     const critical = splitter.minHeight <= RECOMMENDATION.SPLITTER_MIN_HEIGHT_CRITICAL_MM;
     if (warn) {
       const neededLift = Math.max(0, RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM - splitter.minHeight);
+      const frontPushrod = getNormalizedParameter(normalizedSetup, 'platform.frontPushrod');
+      const targetPushrod = frontPushrod?.valueType === 'number' && frontPushrod.numericValue != null
+        ? frontPushrod.numericValue + neededLift
+        : null;
       recommendations.push({
         id: 'platform-splitter',
         category: 'AERO',
         title: 'Protect splitter at speed',
-        action: `Increase front ride height by ~${neededLift.toFixed(0)} mm or add heave spring preload. Min splitter clearance is ${splitter.minHeight.toFixed(1)} mm — target ≥${RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM} mm.`,
+        action: targetPushrod != null && frontPushrod
+          ? `Raise ${frontPushrod.displayName} from ${frontPushrod.displayValue} to ${formatNumeric(targetPushrod, frontPushrod.unit)} to recover ~${neededLift.toFixed(1)} mm of splitter clearance.`
+          : `Increase front platform support by ~${neededLift.toFixed(1)} mm. Min splitter clearance is ${splitter.minHeight.toFixed(1)} mm — target ≥${RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM} mm.`,
         rationale: 'Very low front-center ride height at high speed increases aero inconsistency and floor strike risk.',
         confidence: dataQuality.sectionConfidence.platform,
         severity: pickSeverity(warn, critical),
@@ -957,11 +1174,16 @@ function buildRecommendations(args: {
           `Splitter bottoming count: ${splitter.bottomingCount}`,
         ],
         specifics: [{
-          parameter: 'Splitter min clearance',
-          current: `${splitter.minHeight.toFixed(1)} mm`,
-          target: `≥${RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM} mm`,
-          delta: `+${neededLift.toFixed(0)} mm ride height`,
+          parameter: targetPushrod != null && frontPushrod ? frontPushrod.displayName : 'Splitter min clearance',
+          current: targetPushrod != null && frontPushrod ? frontPushrod.displayValue : `${splitter.minHeight.toFixed(1)} mm`,
+          target: targetPushrod != null && frontPushrod ? formatNumeric(targetPushrod, frontPushrod.unit) : `≥${RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM} mm`,
+          delta: targetPushrod != null ? `+${neededLift.toFixed(1)} mm support` : `+${neededLift.toFixed(1)} mm ride height`,
         }],
+        parameterKey: frontPushrod?.parameterKey,
+        exactness: targetPushrod != null ? 'exact' : 'inferred',
+        verify: ['Check minimum splitter clearance on the next high-speed run.', 'Confirm floor strikes reduce without introducing excessive understeer.'],
+        blockedBy: targetPushrod == null ? ['Front pushrod offset was not found in the parsed setup.'] : undefined,
+        source: 'rule-engine',
       });
     }
   }
@@ -970,13 +1192,27 @@ function buildRecommendations(args: {
     if (stats.peak >= RECOMMENDATION.SHOCK_PEAK_WARN_MM_S) {
       const critical = stats.peak >= RECOMMENDATION.SHOCK_PEAK_CRITICAL_MM_S;
       const overshoot = Math.round(stats.peak - SHOCK_VELOCITY.EXTREME);
+      const hsComp = getNormalizedParameter(normalizedSetup, `dampers.${corner}.hsComp`);
+      const hsSlope = getNormalizedParameter(normalizedSetup, `dampers.${corner}.hsSlope`);
+      const hsCompTarget = hsComp?.valueType === 'number' && hsComp.numericValue != null && !critical
+        ? hsComp.numericValue + 1
+        : null;
+      const hsSlopeTarget = hsSlope?.valueType === 'number' && hsSlope.numericValue != null && critical
+        ? hsSlope.numericValue - 1
+        : null;
+      const chosenParameter = hsSlopeTarget != null ? hsSlope : hsComp;
+      const chosenTarget = hsSlopeTarget ?? hsCompTarget;
       recommendations.push({
         id: `shock-${corner.toLowerCase()}`,
         category: 'DYNAMICS',
         title: `${corner} damper high-speed event control`,
-        action: critical
-          ? `${corner} peak shaft velocity ${stats.peak.toFixed(0)} mm/s exceeds ${SHOCK_VELOCITY.EXTREME} mm/s extreme threshold by ${overshoot} mm/s. Increase high-speed compression damping to bring peak below ${SHOCK_VELOCITY.EXTREME} mm/s.`
-          : `${corner} peak shaft velocity ${stats.peak.toFixed(0)} mm/s approaching extreme threshold (${SHOCK_VELOCITY.EXTREME} mm/s). Review high-speed compression damping to control peak spikes.`,
+        action: hsSlopeTarget != null && hsSlope
+          ? `Lower ${hsSlope.displayName} from ${hsSlope.displayValue} to ${formatNumeric(hsSlopeTarget, hsSlope.unit)} to make the damper more digressive at extreme shaft velocities.`
+          : hsCompTarget != null && hsComp
+            ? `Increase ${hsComp.displayName} from ${hsComp.displayValue} to ${formatNumeric(hsCompTarget, hsComp.unit)} to calm ${corner} peak shaft velocity spikes.`
+          : critical
+            ? `${corner} peak shaft velocity ${stats.peak.toFixed(0)} mm/s exceeds ${SHOCK_VELOCITY.EXTREME} mm/s by ${overshoot} mm/s. Use a more digressive high-speed slope before adding more compression force.`
+            : `${corner} peak shaft velocity ${stats.peak.toFixed(0)} mm/s is approaching the extreme threshold (${SHOCK_VELOCITY.EXTREME} mm/s). Add a small amount of high-speed compression damping.`,
         rationale: 'High peak shaft velocities suggest harsh platform transients and can reduce mechanical confidence.',
         confidence: dataQuality.sectionConfidence.platform,
         severity: pickSeverity(true, critical),
@@ -985,12 +1221,19 @@ function buildRecommendations(args: {
           `${corner} p99: ${stats.p99.toFixed(0)} mm/s`,
           `${corner} peak: ${stats.peak.toFixed(0)} mm/s (extreme>${SHOCK_VELOCITY.EXTREME})`,
         ],
-        specifics: [{
-          parameter: `${corner} peak shaft velocity`,
-          current: `${stats.peak.toFixed(0)} mm/s`,
-          target: `<${SHOCK_VELOCITY.EXTREME} mm/s`,
-          delta: critical ? `-${overshoot} mm/s` : 'monitor',
-        }],
+        specifics: chosenTarget != null
+          ? buildParameterSpecific(chosenParameter, chosenTarget, 0)
+          : [{
+              parameter: `${corner} peak shaft velocity`,
+              current: `${stats.peak.toFixed(0)} mm/s`,
+              target: `<${SHOCK_VELOCITY.EXTREME} mm/s`,
+              delta: critical ? `-${overshoot} mm/s` : 'monitor',
+            }],
+        parameterKey: chosenParameter?.parameterKey,
+        exactness: chosenTarget != null ? 'exact' : 'inferred',
+        verify: [`Re-check ${corner} peak shaft velocity on the next high-speed run.`, 'Confirm the car is not skipping over bumps after the damper change.'],
+        blockedBy: chosenTarget == null ? [`${corner} high-speed damper control was not found in the parsed setup.`] : undefined,
+        source: 'rule-engine',
       });
     }
   }
@@ -1011,6 +1254,7 @@ function buildRecommendations(args: {
         const currentPSI = lastPressures ? lastPressures[corner] : null;
         const isCrowning = crownDelta >= RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C;
         const isCupping = crownDelta <= -RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C;
+        const startPressure = getNormalizedParameter(normalizedSetup, `tyres.${corner}.startingPressure`);
         // Rule of thumb: ~1 PSI adjustment per 3°C crown delta
         const pressureDelta = currentPSI != null && (isCrowning || isCupping)
           ? -(crownDelta / 3)
@@ -1018,6 +1262,13 @@ function buildRecommendations(args: {
         const targetPSI = currentPSI != null && pressureDelta != null
           ? currentPSI + pressureDelta
           : null;
+        const currentColdKpa = startPressure?.valueType === 'number' && startPressure.numericValue != null
+          ? startPressure.numericValue
+          : null;
+        const targetColdKpa = currentColdKpa != null && pressureDelta != null
+          ? currentColdKpa + pressureDelta * 6.895
+          : null;
+        const pressureBlocked = targetColdKpa != null && targetColdKpa < 152;
 
         const crownHint = isCrowning
           ? 'center too hot (over-pressure)'
@@ -1026,10 +1277,14 @@ function buildRecommendations(args: {
             : 'shape near target';
 
         let actionText: string;
-        if (isCrowning && currentPSI != null && targetPSI != null) {
-          actionText = `Reduce ${corner} cold pressure by ~${Math.abs(pressureDelta!).toFixed(1)} PSI. Current hot pressure: ${currentPSI.toFixed(1)} PSI, target: ~${targetPSI.toFixed(1)} PSI. Center is ${crownDelta.toFixed(1)}°C hotter than edges.`;
+        if (isCrowning && currentPSI != null && targetPSI != null && currentColdKpa != null && targetColdKpa != null && !pressureBlocked) {
+          actionText = `Reduce ${corner} starting pressure from ${currentColdKpa.toFixed(0)} kPa to ${targetColdKpa.toFixed(0)} kPa. Current hot pressure is ${currentPSI.toFixed(1)} PSI, target ~${targetPSI.toFixed(1)} PSI.`;
+        } else if (isCrowning && pressureBlocked) {
+          actionText = `${corner} is over-pressured by shape, but the setup is already at or near the 152 kPa minimum. Leave pressure at the floor and correct the contact patch with camber/ARB/load changes instead.`;
         } else if (isCupping && currentPSI != null && targetPSI != null) {
-          actionText = `Increase ${corner} cold pressure by ~${Math.abs(pressureDelta!).toFixed(1)} PSI (current hot: ${currentPSI.toFixed(1)} PSI, target: ~${targetPSI.toFixed(1)} PSI) and/or add negative camber to load the center of the contact patch.`;
+          actionText = currentColdKpa != null && targetColdKpa != null
+            ? `Increase ${corner} starting pressure from ${currentColdKpa.toFixed(0)} kPa to ${targetColdKpa.toFixed(0)} kPa (current hot ${currentPSI.toFixed(1)} PSI, target ~${targetPSI.toFixed(1)} PSI) and re-check camber if the shoulders still run hot.`
+            : `Increase ${corner} cold pressure by ~${Math.abs(pressureDelta!).toFixed(1)} PSI (current hot ${currentPSI.toFixed(1)} PSI, target ~${targetPSI.toFixed(1)} PSI) and re-check camber.`;
         } else if (currentPSI != null) {
           actionText = `${corner} I-O spread is ${spread.toFixed(1)}°C with hot pressure at ${currentPSI.toFixed(1)} PSI. Adjust pressure and camber to reduce spread below ${RECOMMENDATION.TYRE_TEMP_SPREAD_WARN_C}°C.`;
         } else {
@@ -1037,12 +1292,19 @@ function buildRecommendations(args: {
         }
 
         const specifics: RecommendationSpecific[] = [];
-        if (currentPSI != null && targetPSI != null && (isCrowning || isCupping)) {
+        if (currentColdKpa != null && targetColdKpa != null && !pressureBlocked && (isCrowning || isCupping)) {
           specifics.push({
-            parameter: `${corner} hot pressure`,
-            current: `${currentPSI.toFixed(1)} PSI`,
-            target: `~${targetPSI.toFixed(1)} PSI`,
-            delta: `${pressureDelta! > 0 ? '+' : ''}${pressureDelta!.toFixed(1)} PSI cold`,
+            parameter: `${corner} starting pressure`,
+            current: `${currentColdKpa.toFixed(0)} kPa`,
+            target: `~${targetColdKpa.toFixed(0)} kPa`,
+            delta: `${targetColdKpa - currentColdKpa > 0 ? '+' : ''}${(targetColdKpa - currentColdKpa).toFixed(0)} kPa`,
+          });
+        } else if (pressureBlocked && currentColdKpa != null) {
+          specifics.push({
+            parameter: `${corner} starting pressure`,
+            current: `${currentColdKpa.toFixed(0)} kPa`,
+            target: '152 kPa minimum',
+            delta: 'blocked by sim minimum',
           });
         }
         if (spread >= RECOMMENDATION.TYRE_TEMP_SPREAD_WARN_C) {
@@ -1069,6 +1331,11 @@ function buildRecommendations(args: {
             ...(currentPSI != null ? [`${corner} hot pressure: ${currentPSI.toFixed(1)} PSI`] : []),
           ],
           specifics,
+          parameterKey: startPressure?.parameterKey,
+          exactness: currentColdKpa != null ? (pressureBlocked ? 'blocked' : 'exact') : 'inferred',
+          verify: [`Review ${corner} surface shape after the next stabilized lap.`, `Confirm ${corner} hot pressure trends toward ${targetPSI != null ? `~${targetPSI.toFixed(1)} PSI` : 'the target window'}.`],
+          blockedBy: pressureBlocked ? [`${corner} starting pressure would need to go below the 152 kPa sim minimum.`] : undefined,
+          source: 'rule-engine',
         });
       }
     }
@@ -1080,11 +1347,21 @@ function buildRecommendations(args: {
       if (lastWear[corner].avg < ANALYSIS.TYRE_WEAR_RISK_THRESHOLD) {
         const wearRate = validLapCount > 0 ? (100 - lastWear[corner].avg) / validLapCount : 0;
         const lapsTo80 = wearRate > 0 ? Math.floor((lastWear[corner].avg - 80) / wearRate) : 0;
+        const rearAxle = corner === 'LR' || corner === 'RR';
+        const preload = getNormalizedParameter(normalizedSetup, 'diff.rearPreload');
+        const rearArb = getNormalizedParameter(normalizedSetup, 'suspension.rearArbBlades');
+        const frontArb = getNormalizedParameter(normalizedSetup, 'suspension.frontArbBlades');
+        const chosenParameter = rearAxle ? preload ?? rearArb : frontArb;
+        const targetValue = chosenParameter?.valueType === 'number' && chosenParameter.numericValue != null
+          ? chosenParameter.numericValue + (rearAxle ? -2 : -1)
+          : null;
         recommendations.push({
           id: `wear-${corner.toLowerCase()}`,
           category: 'TYRES',
           title: `${corner} wear management`,
-          action: `${corner} at ${lastWear[corner].avg.toFixed(1)}% tread after ${validLapCount} laps (${wearRate.toFixed(2)}%/lap).${lapsTo80 > 0 ? ` Projected to reach 80% in ~${lapsTo80} more laps.` : ''} Reduce sustained load via diff preload, ARB balance, or camber adjustment.`,
+          action: targetValue != null && chosenParameter
+            ? `${corner} is wearing at ${wearRate.toFixed(2)}%/lap. Move ${chosenParameter.displayName} from ${chosenParameter.displayValue} to ${formatNumeric(targetValue, chosenParameter.unit)} before chasing more aggressive tyre settings.`
+            : `${corner} at ${lastWear[corner].avg.toFixed(1)}% tread after ${validLapCount} laps (${wearRate.toFixed(2)}%/lap).${lapsTo80 > 0 ? ` Projected to reach 80% in ~${lapsTo80} more laps.` : ''} Reduce sustained load via diff preload, ARB balance, or camber adjustment.`,
           rationale: 'Accelerated wear suggests the current setup is overworking this tyre over race stint conditions.',
           confidence: dataQuality.sectionConfidence.tyres,
           severity: 'WARNING',
@@ -1093,12 +1370,19 @@ function buildRecommendations(args: {
             `Wear rate: ${wearRate.toFixed(2)}%/lap`,
             `Wear threshold: ${ANALYSIS.TYRE_WEAR_RISK_THRESHOLD}%`,
           ],
-          specifics: [{
-            parameter: `${corner} wear rate`,
-            current: `${wearRate.toFixed(2)}%/lap`,
-            target: '<1.0%/lap',
-            delta: lapsTo80 > 0 ? `~${lapsTo80} laps to 80%` : 'at risk',
-          }],
+          specifics: targetValue != null && chosenParameter
+            ? buildParameterSpecific(chosenParameter, targetValue, 0)
+            : [{
+                parameter: `${corner} wear rate`,
+                current: `${wearRate.toFixed(2)}%/lap`,
+                target: '<1.0%/lap',
+                delta: lapsTo80 > 0 ? `~${lapsTo80} laps to 80%` : 'at risk',
+              }],
+          parameterKey: chosenParameter?.parameterKey,
+          exactness: targetValue != null ? 'exact' : 'inferred',
+          verify: [`Check ${corner} wear rate over the next long run.`, 'Confirm the balance change does not create exit instability.'],
+          blockedBy: targetValue == null ? ['No direct diff/ARB control was found in the parsed setup for this wear issue.'] : undefined,
+          source: 'rule-engine',
         });
       }
     }
@@ -1141,6 +1425,9 @@ function buildRecommendations(args: {
         `Warning thresholds: water>${ENGINE_TEMP.WATER_WARNING}°C, oil>${ENGINE_TEMP.OIL_WARNING}°C`,
       ],
       specifics,
+      exactness: 'inferred',
+      verify: ['Check water and oil temps on the next representative lap.', 'Confirm added cooling does not cost unnecessary straight-line speed.'],
+      source: 'rule-engine',
     });
   }
 
@@ -1149,6 +1436,7 @@ function buildRecommendations(args: {
     const farbAvg = aids.FARB?.avg;
     const rarbAvg = aids.RARB?.avg;
     if (avgChanges >= RECOMMENDATION.DRIVER_AID_ACTIVE_RANGE_WARN) {
+      const rearArbBlades = getNormalizedParameter(normalizedSetup, 'suspension.rearArbBlades');
       // Find the dominant RARB value from speed bands
       const dominantBand = rarb.speedBands.length > 0
         ? rarb.speedBands.reduce((best, b) => b.sampleCount > best.sampleCount ? b : best, rarb.speedBands[0])
@@ -1160,7 +1448,9 @@ function buildRecommendations(args: {
         id: 'rarb-usage',
         category: 'AIDS',
         title: 'Stabilize ARB map usage',
-        action: `Set RARB baseline to ${targetStr} (most-used value across speed bands). Currently averaging ${avgChanges.toFixed(1)} changes/lap — target <${RECOMMENDATION.DRIVER_AID_ACTIVE_RANGE_WARN} changes/lap.`,
+        action: rearArbBlades?.valueType === 'number' && rearArbBlades.numericValue != null
+          ? `Set ${rearArbBlades.displayName} from ${rearArbBlades.displayValue} to ${targetStr} so the garage baseline matches the most-used in-car value.`
+          : `Set RARB baseline to ${targetStr} (most-used value across speed bands). Currently averaging ${avgChanges.toFixed(1)} changes/lap — target <${RECOMMENDATION.DRIVER_AID_ACTIVE_RANGE_WARN} changes/lap.`,
         rationale: 'Frequent ARB changes can indicate setup baseline mismatch across speed phases.',
         confidence: dataQuality.sectionConfidence.setup,
         severity: 'WARNING',
@@ -1170,11 +1460,16 @@ function buildRecommendations(args: {
           formatAidsContext(carProfile),
         ],
         specifics: [{
-          parameter: 'RARB baseline',
-          current: rarbStr,
+          parameter: rearArbBlades?.displayName || 'RARB baseline',
+          current: rearArbBlades?.displayValue || rarbStr,
           target: targetStr,
           delta: `${avgChanges.toFixed(1)}/lap → <${RECOMMENDATION.DRIVER_AID_ACTIVE_RANGE_WARN}/lap`,
         }],
+        parameterKey: rearArbBlades?.parameterKey,
+        exactness: rearArbBlades?.valueType === 'number' ? 'exact' : 'inferred',
+        verify: ['Check that in-car RARB changes/lap drop on the next stint.', 'Confirm the chosen baseline still covers both slow and fast corners.'],
+        blockedBy: rearArbBlades == null ? ['Rear ARB blade baseline was not found in the parsed setup.'] : undefined,
+        source: 'rule-engine',
       });
     }
   }
@@ -1184,11 +1479,14 @@ function buildRecommendations(args: {
     const biasOffset = Math.abs(brakeBias.avg - carProfile.defaultBrakeBias);
     if (biasOffset > 1.0) {
       const sign = brakeBias.avg > carProfile.defaultBrakeBias ? '+' : '-';
+      const setupBrakeBias = getNormalizedParameter(normalizedSetup, 'brakes.bias');
       recommendations.push({
         id: 'brake-bias-calibration',
         category: 'BRAKES',
         title: 'Re-check brake balance baseline',
-        action: `Brake bias currently ${brakeBias.avg.toFixed(1)}%, offset ${sign}${biasOffset.toFixed(1)}% from ${carProfile.name} baseline of ${carProfile.defaultBrakeBias.toFixed(1)}%. Return to ${carProfile.defaultBrakeBias.toFixed(1)}% unless entry stability specifically requires the current offset.`,
+        action: setupBrakeBias?.valueType === 'number' && setupBrakeBias.numericValue != null
+          ? `Move ${setupBrakeBias.displayName} from ${setupBrakeBias.displayValue} back toward ${carProfile.defaultBrakeBias.toFixed(1)}% unless the current entry balance is intentional.`
+          : `Brake bias currently ${brakeBias.avg.toFixed(1)}%, offset ${sign}${biasOffset.toFixed(1)}% from ${carProfile.name} baseline of ${carProfile.defaultBrakeBias.toFixed(1)}%. Return to baseline unless entry stability specifically requires the current offset.`,
         rationale: 'Large drift from known baseline can indicate setup-compensation rather than root-cause fix.',
         confidence: dataQuality.sectionConfidence.setup,
         severity: biasOffset > 2.0 ? 'CRITICAL' : 'WARNING',
@@ -1197,12 +1495,19 @@ function buildRecommendations(args: {
           `Car baseline brake bias: ${carProfile.defaultBrakeBias.toFixed(1)}%`,
           `Offset: ${sign}${biasOffset.toFixed(1)}%`,
         ],
-        specifics: [{
-          parameter: 'Brake bias',
-          current: `${brakeBias.avg.toFixed(1)}%`,
-          target: `${carProfile.defaultBrakeBias.toFixed(1)}%`,
-          delta: `${sign}${biasOffset.toFixed(1)}%`,
-        }],
+        specifics: setupBrakeBias?.valueType === 'number' && setupBrakeBias.numericValue != null
+          ? buildParameterSpecific(setupBrakeBias, carProfile.defaultBrakeBias)
+          : [{
+              parameter: 'Brake bias',
+              current: `${brakeBias.avg.toFixed(1)}%`,
+              target: `${carProfile.defaultBrakeBias.toFixed(1)}%`,
+              delta: `${sign}${biasOffset.toFixed(1)}%`,
+            }],
+        parameterKey: setupBrakeBias?.parameterKey,
+        exactness: setupBrakeBias?.valueType === 'number' ? 'exact' : 'inferred',
+        verify: ['Check brake bias stays closer to the car baseline over a full fuel window.', 'Confirm entry rotation/stability improves without front locking.'],
+        blockedBy: setupBrakeBias == null ? ['Brake bias was available in telemetry but not in the parsed garage setup.'] : undefined,
+        source: 'rule-engine',
       });
     }
   }
@@ -1220,10 +1525,13 @@ function buildRecommendations(args: {
         `Track profile: ${trackProfile.name}`,
         `Mandatory gear stack: ${trackProfile.mandatoryGearStack || 'none'}`,
       ],
+      exactness: 'inferred',
+      source: 'rule-engine',
     });
   }
 
   if (carProfile?.knownQuirks.length) {
+    const keySignals = telemetryReasoning.slice(0, 2).map((signal) => signal.summary);
     recommendations.push({
       id: 'car-quirks',
       category: 'TRACK',
@@ -1232,7 +1540,9 @@ function buildRecommendations(args: {
       rationale: 'Car-specific architecture can change how generic setup deltas translate on track.',
       confidence: dataQuality.confidence,
       severity: 'INFO',
-      evidence: carProfile.knownQuirks.slice(0, 3),
+      evidence: [...carProfile.knownQuirks.slice(0, 2), ...keySignals].slice(0, 3),
+      exactness: 'inferred',
+      source: 'rule-engine',
     });
   }
 
@@ -1249,6 +1559,9 @@ function buildRecommendations(args: {
         `Quality confidence: ${dataQuality.confidence}`,
         ...dataQuality.notes,
       ],
+      exactness: 'blocked',
+      blockedBy: dataQuality.notes,
+      source: 'rule-engine',
     });
   }
 
@@ -1338,9 +1651,24 @@ export function analyzeSession(
   const rarb = analyzeRARB(ch, laps, validLaps, parsed.recordCount, validMask, bestLapIdx);
   const splitter = analyzeSplitter(ch, parsed.recordCount, hiSpeedMask);
   const dataQuality = buildDataQualityReport(parsed, validLaps, parserWarnings);
+  const cs = parsed.sessionInfo?.CarSetup || {};
+  const normalizedSetup = normalizeSetup(cs as Record<string, unknown>, carProfile);
+  const telemetryReasoning = buildTelemetryReasoning({
+    carProfile,
+    tyreTempData,
+    tyreWearData,
+    bottoming,
+    shockVelStats,
+    aids,
+    splitter,
+    rideHeightData,
+    dataQuality,
+  });
   const recommendations = buildRecommendations({
     carProfile,
     trackProfile,
+    normalizedSetup,
+    telemetryReasoning,
     tyreTempData,
     tyrePressureData,
     tyreWearData,
@@ -1355,11 +1683,10 @@ export function analyzeSession(
     validLapCount: validLaps.length,
   });
 
-  const cs = parsed.sessionInfo?.CarSetup || {};
-
   return {
     header,
     setup: flattenSetup(cs as Record<string, unknown>),
+    normalizedSetup,
     lapTimes,
     bestTime,
     tyreTempData,
@@ -1379,6 +1706,7 @@ export function analyzeSession(
     rarb,
     splitter,
     validLaps,
+    telemetryReasoning,
     recommendations,
     dataQuality,
     carProfileId: carProfile?.id || null,

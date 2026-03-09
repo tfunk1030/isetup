@@ -36,6 +36,12 @@ function confidenceToStatus(confidence: SetupRecommendation['confidence']): 'OK'
   return 'RISK';
 }
 
+function exactnessToStatus(exactness: SetupRecommendation['exactness']): 'OK' | 'HIGH' | 'RISK' {
+  if (exactness === 'exact') return 'OK';
+  if (exactness === 'blocked') return 'RISK';
+  return 'HIGH';
+}
+
 export function SetupRecommendationsPanel({ analysis }: Props) {
   const { recommendations, dataQuality } = analysis;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -159,10 +165,18 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             <StatusBadge status={severityToStatus(item.severity)} />
                             <StatusBadge status={confidenceToStatus(item.confidence)} />
+                            {item.exactness && <StatusBadge status={exactnessToStatus(item.exactness)} />}
                           </div>
                         </div>
                         <p className="text-sm text-[var(--color-text)] font-medium mb-1.5">{item.action}</p>
                         <p className="text-xs text-[var(--color-text-muted)] mb-2">{item.rationale}</p>
+                        {item.exactness && (
+                          <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                            {item.exactness === 'exact' && 'Exact change mapped from parsed setup.'}
+                            {item.exactness === 'inferred' && 'Directionally inferred from telemetry because the garage parameter could not be mapped exactly.'}
+                            {item.exactness === 'blocked' && 'Constrained by missing setup data or a sim limit; see notes below.'}
+                          </p>
+                        )}
                         {item.evidence.length > 0 && (
                           <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-0.5">
                             {item.evidence.slice(0, 3).map((ev) => (
@@ -181,6 +195,26 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                                 <span className="text-[var(--color-text-muted)]">({s.delta})</span>
                               </div>
                             ))}
+                          </div>
+                        )}
+                        {item.verify && item.verify.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-[var(--color-card-border)]">
+                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Verify After Change</p>
+                            <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-0.5">
+                              {item.verify.map((check) => (
+                                <li key={check}>{check}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {item.blockedBy && item.blockedBy.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-[var(--color-card-border)]">
+                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Limits</p>
+                            <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-0.5">
+                              {item.blockedBy.map((note) => (
+                                <li key={note}>{note}</li>
+                              ))}
+                            </ul>
                           </div>
                         )}
                       </div>

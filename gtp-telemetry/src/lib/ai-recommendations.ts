@@ -1,4 +1,10 @@
-import type { AISetupBrief, SessionAnalysis } from './types';
+import type {
+  AIRecommendationItem,
+  AISetupBrief,
+  ConfidenceLevel,
+  RecommendationExactness,
+  SessionAnalysis,
+} from './types';
 
 const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
@@ -7,7 +13,7 @@ const DEFAULT_OPUS_MODEL = 'claude-opus-4-6';
 
 interface ModelBrief {
   summary: string;
-  priorityActions: string[];
+  recommendations: AIRecommendationItem[];
   watchItems: string[];
   confidenceNote: string;
   reasoning: string[];
@@ -38,12 +44,91 @@ function extractJsonObject(raw: string): string {
   throw new Error('No JSON object in model output.');
 }
 
+function parseConfidence(value: unknown): ConfidenceLevel {
+  return value === 'HIGH' || value === 'MEDIUM' || value === 'LOW' ? value : 'MEDIUM';
+}
+
+function parseExactness(value: unknown): RecommendationExactness {
+  return value === 'exact' || value === 'inferred' || value === 'blocked' ? value : 'inferred';
+}
+
+function dedupeStrings(values: string[], limit: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(value);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function findSourcePath(analysis: SessionAnalysis, parameterKey?: string): string | undefined {
+  if (!parameterKey) return undefined;
+  return analysis.normalizedSetup.parameters.find((parameter) => parameter.parameterKey === parameterKey)?.sourcePath;
+}
+
+function validateRecommendation(
+  analysis: SessionAnalysis,
+  recommendation: AIRecommendationItem
+): AIRecommendationItem {
+  const matchedParameter = analysis.normalizedSetup.parameters.find(
+    (parameter) => parameter.parameterKey === recommendation.parameterKey
+  );
+
+  if (!matchedParameter) {
+    return {
+      ...recommendation,
+      exactness: recommendation.exactness === 'exact' ? 'blocked' : recommendation.exactness,
+      assumptions: dedupeStrings(
+        [
+          ...recommendation.assumptions,
+          `Parameter key "${recommendation.parameterKey}" was not found in the parsed setup and cannot be verified.`,
+        ],
+        4
+      ),
+      currentSourcePath: undefined,
+    };
+  }
+
+  const assumptions = recommendation.currentValue !== matchedParameter.displayValue
+    ? [...recommendation.assumptions, `Current value grounded to parsed setup (${matchedParameter.displayValue}) from ${matchedParameter.sourcePath}.`]
+    : recommendation.assumptions;
+
+  return {
+    ...recommendation,
+    displayName: matchedParameter.displayName,
+    currentValue: matchedParameter.displayValue,
+    currentSourcePath: matchedParameter.sourcePath,
+    exactness: recommendation.exactness === 'blocked' ? 'blocked' : recommendation.exactness,
+    assumptions: dedupeStrings(assumptions, 4),
+  };
+}
+
+function fallbackRecommendation(analysis: SessionAnalysis, index: number): AIRecommendationItem {
+  const recommendation = analysis.recommendations[index];
+  const primarySpecific = recommendation.specifics?.[0];
+  return {
+    parameterKey: recommendation.parameterKey || recommendation.id,
+    displayName: primarySpecific?.parameter || recommendation.title,
+    currentValue: primarySpecific?.current || 'Telemetry-derived',
+    targetValue: primarySpecific?.target || 'Review',
+    delta: primarySpecific?.delta || 'Inferred from telemetry',
+    reason: recommendation.rationale,
+    evidence: recommendation.evidence.slice(0, 3),
+    confidence: recommendation.confidence,
+    exactness: recommendation.exactness || 'inferred',
+    verification: recommendation.verify || ['Validate the change over a fresh 2-3 lap run.'],
+    assumptions: recommendation.blockedBy || [],
+    source: 'rule-engine',
+    currentSourcePath: findSourcePath(analysis, recommendation.parameterKey),
+  };
+}
+
 function buildFallbackBrief(analysis: SessionAnalysis): AISetupBrief {
   const top = analysis.recommendations.slice(0, 3);
-  const priorityActions = top.map((r) => {
-    const specs = r.specifics?.map((s) => `${s.parameter}: ${s.current} → ${s.target} (${s.delta})`).join('; ');
-    return specs ? `${r.title}: ${r.action} [${specs}]` : `${r.title}: ${r.action}`;
-  });
   const watchItems = [
     ...analysis.dataQuality.notes,
     ...top.flatMap((r) => r.evidence).slice(0, 3),
@@ -53,9 +138,22 @@ function buildFallbackBrief(analysis: SessionAnalysis): AISetupBrief {
     summary: top.length > 0
       ? `Rule engine identified ${analysis.recommendations.length} actionable items. Prioritize critical/warning items first.`
       : 'No urgent setup risks detected from current telemetry. Validate across a longer run.',
-    priorityActions: priorityActions.length > 0
-      ? priorityActions
-      : ['Maintain current setup baseline and collect a longer stint for trend confidence.'],
+    recommendations: top.length > 0
+      ? top.map((_, index) => fallbackRecommendation(analysis, index))
+      : [{
+          parameterKey: 'baseline.hold',
+          displayName: 'Current setup baseline',
+          currentValue: 'Current setup',
+          targetValue: 'Hold',
+          delta: 'No urgent change',
+          reason: 'No urgent setup risks detected from current telemetry.',
+          evidence: ['Rule-engine fallback found no critical items.'],
+          confidence: analysis.dataQuality.confidence,
+          exactness: 'inferred',
+          verification: ['Collect a longer stint before making setup changes.'],
+          assumptions: [],
+          source: 'rule-engine',
+        }],
     watchItems: watchItems.length > 0
       ? watchItems
       : ['No major quality issues detected.'],
@@ -69,6 +167,7 @@ function buildFallbackBrief(analysis: SessionAnalysis): AISetupBrief {
 
 function buildPrompt(analysis: SessionAnalysis): string {
   const topRecs = analysis.recommendations.slice(0, 10).map((r) => ({
+    id: r.id,
     category: r.category,
     severity: r.severity,
     priority: r.priority,
@@ -77,6 +176,10 @@ function buildPrompt(analysis: SessionAnalysis): string {
     rationale: r.rationale,
     evidence: r.evidence.slice(0, 3),
     specifics: r.specifics || [],
+    parameterKey: r.parameterKey ?? null,
+    exactness: r.exactness ?? 'inferred',
+    verify: r.verify || [],
+    blockedBy: r.blockedBy || [],
   }));
 
   const lastPressures = analysis.tyrePressureData[analysis.tyrePressureData.length - 1];
@@ -97,6 +200,21 @@ function buildPrompt(analysis: SessionAnalysis): string {
       bestLapSeconds: Number.isFinite(analysis.bestTime) ? Number(analysis.bestTime.toFixed(2)) : null,
     },
     quality: analysis.dataQuality,
+    normalizedSetup: analysis.normalizedSetup.parameters.map((parameter) => ({
+      parameterKey: parameter.parameterKey,
+      displayName: parameter.displayName,
+      displayValue: parameter.displayValue,
+      unit: parameter.unit || null,
+      sourcePath: parameter.sourcePath,
+      valueType: parameter.valueType,
+      confidence: parameter.confidence,
+    })),
+    setupCoverage: {
+      architecture: analysis.normalizedSetup.architecture,
+      missingKeys: analysis.normalizedSetup.missingKeys,
+      unsupportedKeys: analysis.normalizedSetup.unsupportedKeys,
+    },
+    telemetryReasoning: analysis.telemetryReasoning,
     topRecommendations: topRecs,
     keyMetrics: {
       cleanBottoming: analysis.bottoming.clean,
@@ -117,14 +235,15 @@ function buildPrompt(analysis: SessionAnalysis): string {
 
   return [
     'You are an elite iRacing GTP setup engineer.',
-    'Provide EXACT numeric setup changes — specify current values, target values, and deltas.',
-    'Every priority action MUST include a specific parameter, its current measured value, and what to change it to.',
-    'Example: "Reduce LF cold pressure by 1.0 PSI (currently 26.2 PSI hot, target 25.2 PSI hot)."',
-    'Do NOT give vague advice like "adjust pressure" or "review settings" — always include exact numbers.',
+    'You are receiving structured telemetry reasoning plus the parsed current garage setup.',
+    'Return setup recommendations as structured parameter diffs, not prose bullets.',
+    'Prefer exact current -> target changes only when the current garage parameter exists in normalizedSetup.',
+    'If a recommendation is limited by missing setup values or sim constraints, mark exactness as "blocked" or "inferred" and explain why.',
     'Focus on setup engineering only (no driving advice).',
     'Return STRICT JSON only with keys:',
-    '{ "summary": string, "priorityActions": string[<=5], "watchItems": string[<=5], "confidenceNote": string, "reasoning": string[<=6], "assumptions": string[<=4] }',
-    'Reasoning must explain WHY each specific numeric change is expected to improve performance.',
+    '{ "summary": string, "recommendations": [{ "parameterKey": string, "displayName": string, "currentValue": string, "targetValue": string, "delta": string, "unit": string|null, "reason": string, "evidence": string[], "confidence": "HIGH"|"MEDIUM"|"LOW", "exactness": "exact"|"inferred"|"blocked", "verification": string[], "assumptions": string[] }], "watchItems": string[<=5], "confidenceNote": string, "reasoning": string[<=6], "assumptions": string[<=4] }',
+    'Limit recommendations to the 5 highest-impact setup changes.',
+    'Each recommendation must cite telemetry evidence and identify the exact garage parameter when possible.',
     'Input telemetry summary:',
     JSON.stringify(payload),
   ].join('\n');
@@ -132,6 +251,14 @@ function buildPrompt(analysis: SessionAnalysis): string {
 
 export function hasAIRecommendationConfig(): boolean {
   return Boolean(getEnv('VITE_GEMINI_API_KEY') || getEnv('VITE_ANTHROPIC_API_KEY'));
+}
+
+export function getAIRecommendationMode(): 'local' | 'single-model' | 'dual-model' {
+  const hasGemini = Boolean(getEnv('VITE_GEMINI_API_KEY'));
+  const hasAnthropic = Boolean(getEnv('VITE_ANTHROPIC_API_KEY'));
+  if (hasGemini && hasAnthropic) return 'dual-model';
+  if (hasGemini || hasAnthropic) return 'single-model';
+  return 'local';
 }
 
 function normalizeText(value: string): string {
@@ -142,32 +269,48 @@ function normalizeText(value: string): string {
     .trim();
 }
 
-function pickTopUnique(values: string[], limit: number): string[] {
-  const counts = new Map<string, { count: number; text: string }>();
-  for (const text of values) {
-    const normalized = normalizeText(text);
-    if (!normalized) continue;
-    const existing = counts.get(normalized);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      counts.set(normalized, { count: 1, text });
-    }
-  }
-
-  return [...counts.values()]
-    .sort((a, b) => b.count - a.count)
-    .slice(0, limit)
-    .map((x) => x.text);
-}
-
-function parseModelBrief(rawContent: string): ModelBrief {
+function parseModelBrief(rawContent: string, analysis: SessionAnalysis): ModelBrief {
   const jsonText = extractJsonObject(rawContent);
   const parsed = JSON.parse(jsonText) as Partial<ModelBrief>;
+  const recommendationsRaw = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
 
   return {
     summary: parsed.summary || 'Model summary unavailable.',
-    priorityActions: Array.isArray(parsed.priorityActions) ? parsed.priorityActions.slice(0, 5) : [],
+    recommendations: recommendationsRaw.slice(0, 5).map((recommendation, index) => {
+      const record = recommendation as Partial<AIRecommendationItem>;
+      return validateRecommendation(analysis, {
+        parameterKey: typeof record.parameterKey === 'string' && record.parameterKey.trim()
+          ? record.parameterKey.trim()
+          : `model.rec.${index + 1}`,
+        displayName: typeof record.displayName === 'string' && record.displayName.trim()
+          ? record.displayName.trim()
+          : `Recommendation ${index + 1}`,
+        currentValue: typeof record.currentValue === 'string' && record.currentValue.trim()
+          ? record.currentValue.trim()
+          : 'Unknown',
+        targetValue: typeof record.targetValue === 'string' && record.targetValue.trim()
+          ? record.targetValue.trim()
+          : 'Review',
+        delta: typeof record.delta === 'string' && record.delta.trim()
+          ? record.delta.trim()
+          : 'Inferred',
+        unit: typeof record.unit === 'string' && record.unit.trim() ? record.unit.trim() : undefined,
+        reason: typeof record.reason === 'string' && record.reason.trim()
+          ? record.reason.trim()
+          : 'Model did not provide a detailed reason.',
+        evidence: Array.isArray(record.evidence) ? dedupeStrings(record.evidence.filter((item): item is string => typeof item === 'string'), 4) : [],
+        confidence: parseConfidence(record.confidence),
+        exactness: parseExactness(record.exactness),
+        verification: Array.isArray(record.verification)
+          ? dedupeStrings(record.verification.filter((item): item is string => typeof item === 'string'), 4)
+          : [],
+        assumptions: Array.isArray(record.assumptions)
+          ? dedupeStrings(record.assumptions.filter((item): item is string => typeof item === 'string'), 4)
+          : [],
+        source: 'ai',
+        currentSourcePath: typeof record.currentSourcePath === 'string' ? record.currentSourcePath : undefined,
+      });
+    }),
     watchItems: Array.isArray(parsed.watchItems) ? parsed.watchItems.slice(0, 5) : [],
     confidenceNote: parsed.confidenceNote || 'Model confidence note unavailable.',
     reasoning: Array.isArray(parsed.reasoning) ? parsed.reasoning.slice(0, 6) : [],
@@ -175,7 +318,7 @@ function parseModelBrief(rawContent: string): ModelBrief {
   };
 }
 
-async function queryGemini(prompt: string): Promise<ModelResult | null> {
+async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
   const apiKey = getEnv('VITE_GEMINI_API_KEY');
   if (!apiKey) return null;
   const baseUrl = (getEnv('VITE_GEMINI_BASE_URL') || DEFAULT_GEMINI_BASE_URL).replace(/\/$/, '');
@@ -208,11 +351,11 @@ async function queryGemini(prompt: string): Promise<ModelResult | null> {
 
   return {
     modelName: model,
-    brief: parseModelBrief(content),
+    brief: parseModelBrief(content, analysis),
   };
 }
 
-async function queryOpus(prompt: string): Promise<ModelResult | null> {
+async function queryOpus(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
   const apiKey = getEnv('VITE_ANTHROPIC_API_KEY');
   if (!apiKey) return null;
   const baseUrl = (getEnv('VITE_ANTHROPIC_BASE_URL') || DEFAULT_ANTHROPIC_BASE_URL).replace(/\/$/, '');
@@ -245,7 +388,65 @@ async function queryOpus(prompt: string): Promise<ModelResult | null> {
 
   return {
     modelName: model,
-    brief: parseModelBrief(text),
+    brief: parseModelBrief(text, analysis),
+  };
+}
+
+function recommendationMergeKey(recommendation: AIRecommendationItem): string {
+  return normalizeText(recommendation.parameterKey || recommendation.displayName);
+}
+
+function exactnessRank(exactness: RecommendationExactness): number {
+  if (exactness === 'exact') return 2;
+  if (exactness === 'inferred') return 1;
+  return 0;
+}
+
+function confidenceRank(confidence: ConfidenceLevel): number {
+  if (confidence === 'HIGH') return 2;
+  if (confidence === 'MEDIUM') return 1;
+  return 0;
+}
+
+function mergeRecommendationPair(first: AIRecommendationItem, second: AIRecommendationItem): AIRecommendationItem {
+  const winner = exactnessRank(first.exactness) > exactnessRank(second.exactness)
+    || (exactnessRank(first.exactness) === exactnessRank(second.exactness) && confidenceRank(first.confidence) >= confidenceRank(second.confidence))
+    ? first
+    : second;
+  const loser = winner === first ? second : first;
+  return {
+    ...winner,
+    evidence: dedupeStrings([...winner.evidence, ...loser.evidence], 5),
+    verification: dedupeStrings([...winner.verification, ...loser.verification], 4),
+    assumptions: dedupeStrings([...winner.assumptions, ...loser.assumptions], 4),
+  };
+}
+
+function mergeRecommendations(results: ModelResult[]): { recommendations: AIRecommendationItem[]; disagreements: string[] } {
+  const merged = new Map<string, AIRecommendationItem>();
+  const disagreements: string[] = [];
+
+  for (const result of results) {
+    for (const recommendation of result.brief.recommendations) {
+      const key = recommendationMergeKey(recommendation);
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, recommendation);
+        continue;
+      }
+      if (
+        normalizeText(existing.targetValue) !== normalizeText(recommendation.targetValue)
+        || normalizeText(existing.delta) !== normalizeText(recommendation.delta)
+      ) {
+        disagreements.push(`${result.modelName}: ${recommendation.displayName} targets ${recommendation.targetValue} (${recommendation.delta})`);
+      }
+      merged.set(key, mergeRecommendationPair(existing, recommendation));
+    }
+  }
+
+  return {
+    recommendations: [...merged.values()].slice(0, 5),
+    disagreements: dedupeStrings(disagreements, 4),
   };
 }
 
@@ -255,7 +456,9 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     const single = results[0];
     return {
       summary: single.brief.summary,
-      priorityActions: single.brief.priorityActions,
+      recommendations: single.brief.recommendations.length > 0
+        ? single.brief.recommendations
+        : buildFallbackBrief(analysis).recommendations,
       watchItems: single.brief.watchItems,
       confidenceNote: `${single.brief.confidenceNote} Dataset confidence: ${analysis.dataQuality.confidence}.`,
       reasoning: single.brief.reasoning,
@@ -266,27 +469,23 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
   }
 
   const [first, second] = results;
-  const mergedActions = pickTopUnique(
-    [...first.brief.priorityActions, ...second.brief.priorityActions],
-    5
-  );
-  const mergedWatch = pickTopUnique(
+  const mergedWatch = dedupeStrings(
     [...first.brief.watchItems, ...second.brief.watchItems],
     5
   );
-  const mergedReasoning = pickTopUnique(
+  const mergedReasoning = dedupeStrings(
     [...first.brief.reasoning, ...second.brief.reasoning],
     6
   );
-
-  const firstNormActions = new Set(first.brief.priorityActions.map(normalizeText));
-  const secondNormActions = new Set(second.brief.priorityActions.map(normalizeText));
-  const onlyFirst = first.brief.priorityActions.filter((a) => !secondNormActions.has(normalizeText(a)));
-  const onlySecond = second.brief.priorityActions.filter((a) => !firstNormActions.has(normalizeText(a)));
-  const disagreements = [
-    ...onlyFirst.slice(0, 2).map((x) => `${first.modelName}: ${x}`),
-    ...onlySecond.slice(0, 2).map((x) => `${second.modelName}: ${x}`),
-  ];
+  const mergedRecommendations = mergeRecommendations(results);
+  const disagreementDetails = dedupeStrings(
+    [
+      ...mergedRecommendations.disagreements,
+      ...first.brief.assumptions.map((item) => `${first.modelName}: ${item}`),
+      ...second.brief.assumptions.map((item) => `${second.modelName}: ${item}`),
+    ],
+    5
+  );
 
   return {
     summary: [
@@ -294,11 +493,13 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
       first.brief.summary,
       second.brief.summary,
     ].join(' '),
-    priorityActions: mergedActions.length > 0 ? mergedActions : analysis.recommendations.slice(0, 3).map((r) => r.action),
+    recommendations: mergedRecommendations.recommendations.length > 0
+      ? mergedRecommendations.recommendations
+      : buildFallbackBrief(analysis).recommendations,
     watchItems: mergedWatch.length > 0 ? mergedWatch : analysis.dataQuality.notes.slice(0, 4),
     confidenceNote: `Dual-model synthesis complete. ${analysis.dataQuality.confidence} telemetry confidence. Resolve disagreements before final setup lock.`,
     reasoning: mergedReasoning,
-    disagreements,
+    disagreements: disagreementDetails,
     source: 'consensus',
     modelsUsed: [first.modelName, second.modelName],
   };
@@ -311,7 +512,7 @@ export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<A
   }
 
   try {
-    const settled = await Promise.allSettled([queryGemini(prompt), queryOpus(prompt)]);
+    const settled = await Promise.allSettled([queryGemini(prompt, analysis), queryOpus(prompt, analysis)]);
     const successful: ModelResult[] = settled
       .filter((r): r is PromiseFulfilledResult<ModelResult | null> => r.status === 'fulfilled')
       .map((r) => r.value)
