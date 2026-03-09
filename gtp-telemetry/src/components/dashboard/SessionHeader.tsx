@@ -1,10 +1,10 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useSessionStore } from '../../store/session-store';
-import { exportPDF } from '../../lib/pdf-export';
 
 export function SessionHeader() {
   const { analysis, loadFile } = useSessionStore();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [exporting, setExporting] = useState(false);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -13,6 +13,17 @@ export function SessionHeader() {
     },
     [loadFile]
   );
+
+  const handleExportPDF = async () => {
+    if (!analysis || exporting) return;
+    setExporting(true);
+    try {
+      const { exportPDF } = await import('../../lib/pdf-export');
+      await exportPDF(analysis);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (!analysis) return null;
   const a = analysis.header;
@@ -44,10 +55,11 @@ export function SessionHeader() {
           Migration: {a.hasBrakeMig ? 'YES' : 'NO'}
         </span>
         <button
-          onClick={() => analysis && exportPDF(analysis)}
+          onClick={handleExportPDF}
+          disabled={exporting}
           className="text-xs text-[var(--color-green)] px-2.5 py-1 bg-[var(--color-green)]/15 rounded-md cursor-pointer hover:bg-[var(--color-green)]/25 transition-colors border-none"
         >
-          Export PDF
+          {exporting ? 'Exporting...' : 'Export PDF'}
         </button>
         <label className="text-xs text-[var(--color-accent)] px-2.5 py-1 bg-[var(--color-accent-dim)]/20 rounded-md cursor-pointer hover:bg-[var(--color-accent-dim)]/30 transition-colors">
           New IBT
