@@ -1,0 +1,12 @@
+{
+  "id": "nurburgring-gp",
+  "name": "Nurburgring Grand Prix",
+  "displayNameMatch": ["Nurburgring", "Nürburgring"],
+  "length_km": 5.148,
+  "type": "technical-mixed",
+  "kerbZones": [],
+  "validLapWindow": [100, 130],
+  "backStraightZone": null,
+  "setupFocus": "Mixed-speed corners, aggressive kerbs, stable aero platform",
+  "mandatoryGearStack": null
+}

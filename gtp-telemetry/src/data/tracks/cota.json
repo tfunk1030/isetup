@@ -1,0 +1,12 @@
+{
+  "id": "cota",
+  "name": "Circuit of the Americas",
+  "displayNameMatch": ["Circuit of the Americas", "COTA"],
+  "length_km": 5.513,
+  "type": "modern-technical",
+  "kerbZones": [],
+  "validLapWindow": [110, 140],
+  "backStraightZone": null,
+  "setupFocus": "Elevation changes, high-speed S-curves, brake stability into T1",
+  "mandatoryGearStack": null
+}

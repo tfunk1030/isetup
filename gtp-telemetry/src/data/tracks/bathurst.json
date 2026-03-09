@@ -1,0 +1,12 @@
+{
+  "id": "bathurst",
+  "name": "Mount Panorama Circuit",
+  "displayNameMatch": ["Bathurst", "Mount Panorama"],
+  "length_km": 6.213,
+  "type": "extreme-elevation",
+  "kerbZones": [],
+  "validLapWindow": [115, 150],
+  "backStraightZone": null,
+  "setupFocus": "Mountain section compliance, Conrod straight top speed, wall proximity",
+  "mandatoryGearStack": null
+}

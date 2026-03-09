@@ -1,0 +1,12 @@
+{
+  "id": "road-america",
+  "name": "Road America",
+  "displayNameMatch": ["Road America"],
+  "length_km": 6.515,
+  "type": "fast-open",
+  "kerbZones": [],
+  "validLapWindow": [120, 155],
+  "backStraightZone": null,
+  "setupFocus": "Long straights, heavy braking zones, low-drag option viability",
+  "mandatoryGearStack": null
+}

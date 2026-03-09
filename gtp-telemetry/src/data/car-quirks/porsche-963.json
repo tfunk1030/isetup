@@ -1,0 +1,14 @@
+{
+  "id": "porsche-963",
+  "name": "Porsche 963",
+  "screenNameMatch": ["Porsche 963", "Porsche"],
+  "chassis": "multimatic",
+  "architecture": "lmdh",
+  "hasBrakeMigration": true,
+  "pushrodParamName": "PushrodLengthOffset",
+  "arbValueType": "descriptive",
+  "diffArchitecture": "rear_only",
+  "setupPathPrefix": { "brakesDiff": "BrakesDriveUnit", "dampers": "Chassis" },
+  "defaultBrakeBias": 47.0,
+  "knownQuirks": ["rear-limited-understeer", "high-aero-sensitivity", "needs-aggressive-rear-arb"]
+}

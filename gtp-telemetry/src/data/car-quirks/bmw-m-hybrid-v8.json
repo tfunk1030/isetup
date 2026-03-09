@@ -1,0 +1,14 @@
+{
+  "id": "bmw-m-hybrid-v8",
+  "name": "BMW M Hybrid V8",
+  "screenNameMatch": ["BMW M Hybrid V8"],
+  "chassis": "dallara",
+  "architecture": "lmdh",
+  "hasBrakeMigration": false,
+  "pushrodParamName": "PushrodLengthOffset",
+  "arbValueType": "descriptive",
+  "diffArchitecture": "rear_only",
+  "setupPathPrefix": { "brakesDiff": "BrakesDriveUnit", "dampers": "Chassis" },
+  "defaultBrakeBias": 46.0,
+  "knownQuirks": ["cold-tyre-snap", "rear-arb-sensitivity", "pressure-rise-aggressive", "rear-bottoming-fix-via-hs-comp-not-heave"]
+}

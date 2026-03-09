@@ -1,0 +1,12 @@
+{
+  "id": "sebring",
+  "name": "Sebring International Raceway",
+  "displayNameMatch": ["Sebring"],
+  "length_km": 5.794,
+  "type": "bumpy-mixed",
+  "kerbZones": [[10, 15], [40, 47], [60, 65]],
+  "validLapWindow": [105, 135],
+  "backStraightZone": [35, 50],
+  "setupFocus": "Compliant suspension, heave spring stiffness, bump clearance",
+  "mandatoryGearStack": null
+}

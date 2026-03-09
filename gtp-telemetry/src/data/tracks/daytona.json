@@ -1,0 +1,12 @@
+{
+  "id": "daytona",
+  "name": "Daytona International Speedway",
+  "displayNameMatch": ["Daytona"],
+  "length_km": 5.73,
+  "type": "high-speed-oval-infield",
+  "kerbZones": [],
+  "validLapWindow": [100, 130],
+  "backStraightZone": null,
+  "setupFocus": "Low drag, banking stability, high-speed aero platform",
+  "mandatoryGearStack": null
+}

@@ -1,0 +1,12 @@
+{
+  "id": "imola",
+  "name": "Autodromo Enzo e Dino Ferrari",
+  "displayNameMatch": ["Imola"],
+  "length_km": 4.909,
+  "type": "old-school-technical",
+  "kerbZones": [],
+  "validLapWindow": [95, 125],
+  "backStraightZone": null,
+  "setupFocus": "Kerb compliance, elevation changes, limited runoff consequence",
+  "mandatoryGearStack": null
+}

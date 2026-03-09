@@ -1,0 +1,14 @@
+{
+  "id": "acura-arx-06",
+  "name": "Acura ARX-06",
+  "screenNameMatch": ["Acura ARX-06", "Acura"],
+  "chassis": "oreca",
+  "architecture": "lmdh",
+  "hasBrakeMigration": false,
+  "pushrodParamName": "PushrodLengthOffset",
+  "arbValueType": "descriptive",
+  "diffArchitecture": "rear_only",
+  "setupPathPrefix": { "brakesDiff": "BrakesDriveUnit", "dampers": "Chassis" },
+  "defaultBrakeBias": 47.0,
+  "knownQuirks": ["best-low-speed-rotation", "most-consistent-platform", "lowest-setup-effort"]
+}
