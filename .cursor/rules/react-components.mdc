@@ -1,0 +1,70 @@
+---
+description: React component conventions for the telemetry dashboard and shared UI
+globs: gtp-telemetry/src/components/**/*.tsx
+---
+
+# React component guidance
+
+## Dashboard panels (`components/dashboard/`)
+
+Each panel corresponds to one item in the analysis checklist:
+
+1. SessionHeader — car, track, driver, conditions (store-backed exception: reads state and handles reload/export)
+2. LapTimesChart — per-lap times with max speed
+3. TyreTempsPanel — surface temps (O/M/I) per corner per lap
+4. TyrePressuresChart — hot pressures per corner per lap
+5. TyreWearPanel — tread remaining per corner
+6. ConditioningTrend — temp conditioning rate over stint
+7. RideHeightScatter — ride heights at speed
+8. SplitterAnalysis — center front splitter ride height
+9. ShockVelocityPanel — shock velocity stats (p95, p99, peak)
+10. GForceScatter — lateral vs longitudinal g scatter
+11. EngineTempsPanel — water and oil temps per lap
+12. FuelPanel — consumption rate and range
+13. DriverAidsPanel — brake bias, TC, ABS changes
+14. RARBAnalysis — front/rear ARB blade analysis
+15. SetupDump — raw setup YAML display
+
+### Panel pattern
+
+```tsx
+import { Card } from '../shared/Card';
+import type { SessionAnalysis } from '../../lib/types';
+
+interface Props {
+  analysis: SessionAnalysis;
+}
+
+export function PanelName({ analysis }: Props) {
+  return (
+    <Card title="Panel Title" icon="icon">
+      {/* content */}
+    </Card>
+  );
+}
+```
+
+### Rules
+
+- Most panels accept `analysis: SessionAnalysis` as the prop
+- Wrap content in the `Card` component from `../shared/Card`
+- Use `StatusBadge` for threshold-based status indicators (COLD/OK/HOT/HIGH/SAFE/RISK)
+- Use `MetricRow` for label/value pairs with optional units and status
+- Use thresholds from `src/lib/constants.ts` — never hardcode threshold values
+- Recharts charts use colors from the `COLORS` constant
+
+## Shared components (`components/shared/`)
+
+- `Card` — panel container with title, icon, optional grid span
+- `TabBar` — tab navigation for the dashboard sections
+- `StatusBadge` — colored status pill (uses `STATUS_COLORS` mapping)
+- `MetricRow` — single metric display: label, value, unit, status
+
+Keep shared components generic — no telemetry-specific logic in shared components.
+
+## Import and structure expectations
+
+- Use the existing local import style already present in the app
+- Preserve lazy-loaded panel boundaries defined in `gtp-telemetry/src/App.tsx`
+- Keep calculation-heavy logic in `analysis-engine.ts` when possible instead of re-deriving data in the UI
+- Guard optional analysis fields and channels; some parsed sessions degrade gracefully
