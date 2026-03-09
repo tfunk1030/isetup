@@ -1,0 +1,71 @@
+---
+description: IBT parsing and telemetry analysis engine conventions
+globs: gtp-telemetry/src/lib/**/*.ts
+---
+
+# Telemetry Analysis Engine Conventions
+
+## IBT Parser (`lib/ibt-parser.ts`)
+
+- Parses iRacing `.ibt` binary telemetry files entirely in the browser.
+- Returns an `IBTParsed` object with session info (YAML), channel variables, and a `readChannel()` function.
+- All channel data is returned as `Float64Array` for performance.
+- The session info YAML contains `CarSetup` with the complete garage setup.
+
+## Analysis Engine (`lib/analysis-engine.ts`)
+
+- `analyzeSession()` takes a parsed IBT, optional car profile, and track profile.
+- Produces a `SessionAnalysis` result with all 14 checklist items.
+- Uses car profiles for car-specific logic (brake migration, setup paths, parameter names).
+- Uses track profiles for kerb zones, valid lap windows, and speed thresholds.
+
+## Units and Conversions (`lib/unit-conversions.ts`)
+
+Raw telemetry units differ from display units. Always convert:
+
+| Channel | Raw | Display | Conversion |
+|---------|-----|---------|------------|
+| Speed | m/s | km/h | × 3.6 |
+| Acceleration | m/s² | g | ÷ 9.81 |
+| Pressure | kPa | PSI | ÷ 6.895 |
+| Ride heights | m | mm | × 1000 |
+| Shock deflections | m | mm | × 1000 |
+| Steering | rad | deg | × 180/π |
+
+## Thresholds
+
+All analysis thresholds are defined in `lib/constants.ts`. Reference them by name:
+
+- `TYRE_TEMP.COLD` (70°C), `TYRE_TEMP.HOT` (105°C)
+- `TYRE_PRESSURE.HIGH_THRESHOLD` (24 PSI)
+- `SHOCK_VELOCITY.EXTREME` (700 mm/s)
+- `ANALYSIS.HIGH_SPEED_KPH` (200 km/h)
+- `ENGINE_TEMP.WATER_WARNING` (110°C)
+
+## Car Profiles (`lib/car-profiles.ts`)
+
+Each of the five GTP cars has a profile defining:
+- Setup parameter naming differences (e.g., `PushrodLengthOffset` vs `PushrodLengthDelta`)
+- Brake migration availability
+- Diff architecture (rear-only vs front-and-rear)
+- ARB value types (descriptive vs indexed)
+- Default brake bias
+
+Car-specific JSON data lives in `src/data/car-quirks/`.
+
+## Track Profiles (`lib/track-profiles.ts`)
+
+Per-track profiles define:
+- Kerb zones (lap distance percentages) for classifying bottoming events
+- Valid lap time windows for filtering out-laps/in-laps
+- Speed thresholds and setup focus areas
+
+Track JSON data lives in `src/data/tracks/`.
+
+## Key Rules
+
+- Never hardcode channel names — use the `ANALYSIS_CHANNELS` array from `types.ts`.
+- Always guard against missing channels (some IBT files may not contain all channels).
+- Use the last 40-60% of each lap for stabilized tyre temperature readings.
+- Filter laps by the track profile's `validLapWindow` to exclude out-laps and in-laps.
+- Convert units at the display layer, not in the analysis engine (engine works in SI units).
