@@ -1,0 +1,12 @@
+{
+  "id": "watkins-glen",
+  "name": "Watkins Glen International",
+  "displayNameMatch": ["Watkins Glen"],
+  "length_km": 5.43,
+  "type": "fast-flowing",
+  "kerbZones": [],
+  "validLapWindow": [100, 130],
+  "backStraightZone": null,
+  "setupFocus": "High-speed balance, chicane compliance, bus stop kerb management",
+  "mandatoryGearStack": null
+}

@@ -1,0 +1,12 @@
+{
+  "id": "indianapolis-gp",
+  "name": "Indianapolis Motor Speedway",
+  "displayNameMatch": ["Indianapolis"],
+  "length_km": 4.17,
+  "type": "technical-infield",
+  "kerbZones": [],
+  "validLapWindow": [80, 110],
+  "backStraightZone": null,
+  "setupFocus": "Slow-speed rotation, banking transition, tyre warm-up in short stints",
+  "mandatoryGearStack": null
+}

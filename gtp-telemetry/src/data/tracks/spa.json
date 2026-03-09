@@ -1,0 +1,12 @@
+{
+  "id": "spa",
+  "name": "Circuit de Spa-Francorchamps",
+  "displayNameMatch": ["Spa"],
+  "length_km": 7.004,
+  "type": "fast-undulating",
+  "kerbZones": [],
+  "validLapWindow": [130, 170],
+  "backStraightZone": null,
+  "setupFocus": "Eau Rouge load, Kemmel straight top speed, rain preparedness",
+  "mandatoryGearStack": null
+}

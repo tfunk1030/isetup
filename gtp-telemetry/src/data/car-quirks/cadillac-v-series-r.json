@@ -1,0 +1,14 @@
+{
+  "id": "cadillac-v-series-r",
+  "name": "Cadillac V-Series.R",
+  "screenNameMatch": ["Cadillac V-Series.R", "Cadillac"],
+  "chassis": "dallara",
+  "architecture": "lmdh",
+  "hasBrakeMigration": true,
+  "pushrodParamName": "PushrodLengthOffset",
+  "arbValueType": "descriptive",
+  "diffArchitecture": "rear_only",
+  "setupPathPrefix": { "brakesDiff": "BrakesDriveUnit", "dampers": "Chassis" },
+  "defaultBrakeBias": 48.0,
+  "knownQuirks": ["most-natural-rotation", "softest-rear-arb-of-lmdh", "highest-top-speed"]
+}

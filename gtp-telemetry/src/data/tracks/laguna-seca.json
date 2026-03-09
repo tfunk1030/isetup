@@ -1,0 +1,12 @@
+{
+  "id": "laguna-seca",
+  "name": "WeatherTech Raceway Laguna Seca",
+  "displayNameMatch": ["Laguna Seca"],
+  "length_km": 3.602,
+  "type": "technical-undulating",
+  "kerbZones": [],
+  "validLapWindow": [70, 100],
+  "backStraightZone": null,
+  "setupFocus": "Corkscrew compression, elevation changes, short track tyre management",
+  "mandatoryGearStack": null
+}

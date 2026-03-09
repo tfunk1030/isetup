@@ -1,0 +1,12 @@
+{
+  "id": "le-mans",
+  "name": "Circuit de la Sarthe",
+  "displayNameMatch": ["Le Mans", "Sarthe"],
+  "length_km": 13.626,
+  "type": "ultra-high-speed-endurance",
+  "kerbZones": [],
+  "validLapWindow": [210, 270],
+  "backStraightZone": null,
+  "setupFocus": "Mulsanne straight top speed, chicane compliance, 24h durability",
+  "mandatoryGearStack": "Long"
+}

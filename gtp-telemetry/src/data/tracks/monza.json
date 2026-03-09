@@ -1,0 +1,12 @@
+{
+  "id": "monza",
+  "name": "Autodromo Nazionale Monza",
+  "displayNameMatch": ["Monza"],
+  "length_km": 5.793,
+  "type": "ultra-low-drag",
+  "kerbZones": [],
+  "validLapWindow": [100, 130],
+  "backStraightZone": null,
+  "setupFocus": "Minimum drag, chicane kerb compliance, heavy braking zones",
+  "mandatoryGearStack": null
+}

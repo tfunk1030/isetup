@@ -1,0 +1,12 @@
+{
+  "id": "road-atlanta",
+  "name": "Road Atlanta",
+  "displayNameMatch": ["Road Atlanta"],
+  "length_km": 4.088,
+  "type": "fast-undulating",
+  "kerbZones": [],
+  "validLapWindow": [75, 105],
+  "backStraightZone": null,
+  "setupFocus": "Elevation changes, high-speed esses, braking into T10a downhill",
+  "mandatoryGearStack": null
+}

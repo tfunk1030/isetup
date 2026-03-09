@@ -1,0 +1,12 @@
+{
+  "id": "suzuka",
+  "name": "Suzuka International Racing Course",
+  "displayNameMatch": ["Suzuka"],
+  "length_km": 5.807,
+  "type": "fast-technical",
+  "kerbZones": [],
+  "validLapWindow": [105, 135],
+  "backStraightZone": null,
+  "setupFocus": "High-speed S-curves, 130R load, figure-8 elevation changes",
+  "mandatoryGearStack": null
+}

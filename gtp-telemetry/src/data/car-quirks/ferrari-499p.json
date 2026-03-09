@@ -1,0 +1,14 @@
+{
+  "id": "ferrari-499p",
+  "name": "Ferrari 499P",
+  "screenNameMatch": ["Ferrari 499P", "Ferrari"],
+  "chassis": "ferrari_lmh",
+  "architecture": "lmh",
+  "hasBrakeMigration": true,
+  "pushrodParamName": "PushrodLengthDelta",
+  "arbValueType": "indexed",
+  "diffArchitecture": "front_and_rear",
+  "setupPathPrefix": { "brakesDiff": "Systems", "dampers": "Dampers" },
+  "defaultBrakeBias": 56.5,
+  "knownQuirks": ["rear-dampers-much-stiffer", "front-rear-diff-preload", "cornering-mode-hybrid", "front-axle-hybrid-over-190kph"]
+}
