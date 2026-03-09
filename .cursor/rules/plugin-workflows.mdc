@@ -1,0 +1,28 @@
+---
+description: Guidance for the iRacing GTP Engineer plugin, commands, installer, and Python parser
+globs: iracing-gtp-engineer-plugin/**/*.md,iracing-gtp-engineer-plugin/**/*.json,iracing-gtp-engineer-plugin/**/*.py,iracing-gtp-engineer-plugin/install.ps1
+---
+
+# Plugin workflow guidance
+
+Use this rule when editing the plugin manifest, command docs, skill docs, install script, or Python parser.
+
+## Current layout
+
+- `plugin.json` defines one core skill and three commands
+- `scripts/parse_ibt.py` is the standalone Python parser
+- Reference docs live under `skills/iracing-gtp-engineer/references/`
+- `install.ps1` copies the shipped files into the user plugin/skill directories
+
+## Editing rules
+
+- If you add commands, skills, or new supporting files, update `plugin.json` and `install.ps1` together
+- Do not document paths like `references/*.md` at the plugin root unless those files actually exist there
+- Keep command docs aligned with real files and supported workflows
+- Prefer incremental additions over broad manifest expansion that the installer cannot yet provision
+
+## Parser parity
+
+- `gtp-telemetry/src/lib/ibt-parser.ts` is the browser port of the same domain logic
+- When changing shared parsing assumptions, review both TypeScript and Python implementations for drift
+- Keep channel names, unit assumptions, and fallback behavior explicit in docs

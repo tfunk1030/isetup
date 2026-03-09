@@ -1,0 +1,69 @@
+---
+description: Guidance for IBT parsing, analysis logic, units, thresholds, and telemetry domain data
+globs: gtp-telemetry/src/lib/**/*.ts,gtp-telemetry/src/data/**/*.json
+---
+
+# Telemetry pipeline guidance
+
+Use this rule when working on IBT parsing, unit handling, analysis heuristics, or car/track data.
+
+## Parser guardrails
+
+- `gtp-telemetry/src/lib/ibt-parser.ts` is a browser-side parser that mirrors the standalone Python parser
+- Parses `.ibt` binary telemetry files entirely in the browser, returning an `IBTParsed` object with session info (YAML), channel variables, and a `readChannel()` function
+- Be conservative with `DataView` offsets, lengths, and endianness
+- Keep `TextDecoder('latin1')` unless you have verified a different encoding against real IBT files
+- Prefer clear validation failures for corrupt or truncated files over uncaught runtime exceptions
+
+## Analysis engine guardrails
+
+- `gtp-telemetry/src/lib/analysis-engine.ts` feeds many dashboard panels and the PDF export
+- `analyzeSession()` takes a parsed IBT, optional car profile, and track profile; produces a `SessionAnalysis` with all checklist items
+- Use `ANALYSIS_CHANNELS` from `types.ts` for channel loading and keep missing-channel behavior defensive
+- Favor graceful degradation when a non-critical channel is absent
+- Keep car-specific logic in `car-profiles.ts` / car-quirk data and track-specific logic in `track-profiles.ts` / track data
+
+## Units and conversions
+
+Raw telemetry units differ from UI-facing units. Convert at the display layer, not in the analysis engine (engine works in SI units).
+
+| Channel | Raw | Display | Conversion |
+|---------|-----|---------|------------|
+| Speed | m/s | km/h | x 3.6 |
+| Acceleration | m/s^2 | g | / 9.81 |
+| Pressure | kPa | PSI | / 6.895 |
+| Ride heights | m | mm | x 1000 |
+| Shock deflections | m | mm | x 1000 |
+| Steering | rad | deg | x 180/pi |
+
+## Thresholds
+
+All analysis thresholds are defined in `lib/constants.ts`. Reference them by name, never hardcode:
+
+- `TYRE_TEMP.COLD` (70 C), `TYRE_TEMP.HOT` (105 C)
+- `TYRE_PRESSURE.HIGH_THRESHOLD` (24 PSI)
+- `SHOCK_VELOCITY.EXTREME` (700 mm/s)
+- `ANALYSIS.HIGH_SPEED_KPH` (200 km/h)
+- `ENGINE_TEMP.WATER_WARNING` (110 C)
+
+## Car profiles (`lib/car-profiles.ts`)
+
+Each GTP car (BMW M Hybrid V8, Porsche 963, Cadillac V-Series.R, Acura ARX-06, Ferrari 499P) has a profile defining setup parameter naming, brake migration availability, diff architecture, ARB value types, and default brake bias. Car-specific JSON lives in `src/data/car-quirks/`.
+
+## Track profiles (`lib/track-profiles.ts`)
+
+Per-track profiles define kerb zones, valid lap time windows, and speed thresholds. Track JSON lives in `src/data/tracks/`.
+
+## Key rules
+
+- Never hardcode channel names — use the `ANALYSIS_CHANNELS` array from `types.ts`
+- Always guard against missing channels
+- Use the last 40-60% of each lap for stabilized tyre temperature readings
+- Filter laps by the track profile's `validLapWindow` to exclude out-laps and in-laps
+- When touching conversions, update all downstream assumptions consistently
+
+## Domain references
+
+- Root `SKILL.md` contains the most complete setup-engineering context
+- Plugin references live in `iracing-gtp-engineer-plugin/skills/iracing-gtp-engineer/references/`
+- Keep TypeScript and Python parser expectations aligned when changing shared assumptions
