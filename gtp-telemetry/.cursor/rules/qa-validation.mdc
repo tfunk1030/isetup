@@ -1,0 +1,27 @@
+---
+description: Validation checklist for browser-heavy changes in this repo
+globs: src/**/*.ts,src/**/*.tsx,README.md,AGENTS.md
+alwaysApply: false
+---
+
+# QA and validation guidance
+
+This repo has meaningful browser behavior but no automated test suite yet, so validation should be explicit.
+
+## Required checks
+
+- Run `npm run lint`
+- Run `npm run build`
+
+## Browser smoke tests to prefer
+
+- The empty upload screen renders correctly.
+- Uploading a supported `.ibt` file still starts analysis.
+- The main dashboard tabs render without console/runtime errors.
+- PDF export still completes when analysis is present.
+
+## Review mindset
+
+- Look for runtime regressions caused by missing telemetry channels.
+- Watch for changes that break chart assumptions or type contracts.
+- For parser changes, consider truncated files and malformed metadata.
