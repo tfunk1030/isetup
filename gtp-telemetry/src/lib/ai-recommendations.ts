@@ -40,7 +40,10 @@ function extractJsonObject(raw: string): string {
 
 function buildFallbackBrief(analysis: SessionAnalysis): AISetupBrief {
   const top = analysis.recommendations.slice(0, 3);
-  const priorityActions = top.map((r) => `${r.title}: ${r.action}`);
+  const priorityActions = top.map((r) => {
+    const specs = r.specifics?.map((s) => `${s.parameter}: ${s.current} → ${s.target} (${s.delta})`).join('; ');
+    return specs ? `${r.title}: ${r.action} [${specs}]` : `${r.title}: ${r.action}`;
+  });
   const watchItems = [
     ...analysis.dataQuality.notes,
     ...top.flatMap((r) => r.evidence).slice(0, 3),
@@ -72,8 +75,19 @@ function buildPrompt(analysis: SessionAnalysis): string {
     title: r.title,
     action: r.action,
     rationale: r.rationale,
-    evidence: r.evidence.slice(0, 2),
+    evidence: r.evidence.slice(0, 3),
+    specifics: r.specifics || [],
   }));
+
+  const lastPressures = analysis.tyrePressureData[analysis.tyrePressureData.length - 1];
+  const lastTemps = analysis.tyreTempData[analysis.tyreTempData.length - 1];
+
+  const rideHeightAvg = analysis.rideHeightData.length > 0 ? {
+    LF: Number((analysis.rideHeightData.reduce((s, r) => s + r.LF, 0) / analysis.rideHeightData.length).toFixed(1)),
+    RF: Number((analysis.rideHeightData.reduce((s, r) => s + r.RF, 0) / analysis.rideHeightData.length).toFixed(1)),
+    LR: Number((analysis.rideHeightData.reduce((s, r) => s + r.LR, 0) / analysis.rideHeightData.length).toFixed(1)),
+    RR: Number((analysis.rideHeightData.reduce((s, r) => s + r.RR, 0) / analysis.rideHeightData.length).toFixed(1)),
+  } : null;
 
   const payload = {
     session: {
@@ -90,16 +104,27 @@ function buildPrompt(analysis: SessionAnalysis): string {
       peakLatG: Number(analysis.peakLatG.toFixed(2)),
       peakBrakeG: Number(analysis.peakBrakeG.toFixed(2)),
       fuelPerLap: Number(analysis.fuel.perLap.toFixed(2)),
+      tyrePressuresPSI: lastPressures ? { LF: Number(lastPressures.LF.toFixed(1)), RF: Number(lastPressures.RF.toFixed(1)), LR: Number(lastPressures.LR.toFixed(1)), RR: Number(lastPressures.RR.toFixed(1)) } : null,
+      avgRideHeightsAtSpeedMM: rideHeightAvg,
+      lastLapTyreTemps: lastTemps ? {
+        LF: { O: Number(lastTemps.LF.O.toFixed(1)), M: Number(lastTemps.LF.M.toFixed(1)), I: Number(lastTemps.LF.I.toFixed(1)) },
+        RF: { O: Number(lastTemps.RF.O.toFixed(1)), M: Number(lastTemps.RF.M.toFixed(1)), I: Number(lastTemps.RF.I.toFixed(1)) },
+        LR: { O: Number(lastTemps.LR.O.toFixed(1)), M: Number(lastTemps.LR.M.toFixed(1)), I: Number(lastTemps.LR.I.toFixed(1)) },
+        RR: { O: Number(lastTemps.RR.O.toFixed(1)), M: Number(lastTemps.RR.M.toFixed(1)), I: Number(lastTemps.RR.I.toFixed(1)) },
+      } : null,
     },
   };
 
   return [
     'You are an elite iRacing GTP setup engineer.',
-    'Analyze telemetry-derived setup data deeply and provide precise setup tweak guidance.',
+    'Provide EXACT numeric setup changes — specify current values, target values, and deltas.',
+    'Every priority action MUST include a specific parameter, its current measured value, and what to change it to.',
+    'Example: "Reduce LF cold pressure by 1.0 PSI (currently 26.2 PSI hot, target 25.2 PSI hot)."',
+    'Do NOT give vague advice like "adjust pressure" or "review settings" — always include exact numbers.',
     'Focus on setup engineering only (no driving advice).',
     'Return STRICT JSON only with keys:',
     '{ "summary": string, "priorityActions": string[<=5], "watchItems": string[<=5], "confidenceNote": string, "reasoning": string[<=6], "assumptions": string[<=4] }',
-    'Reasoning must explain why each top setup adjustment is expected to help.',
+    'Reasoning must explain WHY each specific numeric change is expected to improve performance.',
     'Input telemetry summary:',
     JSON.stringify(payload),
   ].join('\n');

@@ -248,6 +248,13 @@ export type RecommendationCategory =
   | 'POWERTRAIN'
   | 'TRACK';
 
+export interface RecommendationSpecific {
+  parameter: string;
+  current: string;
+  target: string;
+  delta: string;
+}
+
 export interface SetupRecommendation {
   id: string;
   category: RecommendationCategory;
@@ -258,6 +265,7 @@ export interface SetupRecommendation {
   confidence: ConfidenceLevel;
   severity: RecommendationSeverity;
   evidence: string[];
+  specifics?: RecommendationSpecific[];
 }
 
 export interface DataQualityReport {

@@ -170,6 +170,19 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                             ))}
                           </ul>
                         )}
+                        {item.specifics && item.specifics.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-[var(--color-card-border)] space-y-1">
+                            {item.specifics.map((s) => (
+                              <div key={s.parameter} className="flex items-center gap-2 text-xs">
+                                <span className="text-[var(--color-text-muted)] min-w-0 truncate">{s.parameter}:</span>
+                                <span className="font-mono text-[var(--color-text-dim)]">{s.current}</span>
+                                <span className="text-[var(--color-accent)] font-bold">{'\u2192'}</span>
+                                <span className="font-mono font-semibold text-[var(--color-text)]">{s.target}</span>
+                                <span className="text-[var(--color-text-muted)]">({s.delta})</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
