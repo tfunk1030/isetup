@@ -1,11 +1,38 @@
 {
   "name": "iracing-gtp-engineer",
-  "version": "1.0.0",
-  "description": "iRacing GTP Hypercar setup engineer — telemetry analysis, setup diagnosis, IBT parsing",
+  "displayName": "iRacing GTP Engineer",
+  "version": "1.1.0",
+  "description": "iRacing GTP Hypercar setup engineer with telemetry parsing, validation, QA agents, and MCP integrations",
+  "keywords": [
+    "iracing",
+    "telemetry",
+    "gtp",
+    "setup",
+    "ibt",
+    "skills",
+    "agents",
+    "mcp"
+  ],
   "skills": [
     {
       "name": "iracing-gtp-engineer",
       "path": "skills/iracing-gtp-engineer"
+    },
+    {
+      "name": "ibt-parser-specialist",
+      "path": "skills/ibt-parser-specialist"
+    },
+    {
+      "name": "telemetry-threshold-validator",
+      "path": "skills/telemetry-threshold-validator"
+    },
+    {
+      "name": "setup-diagnosis-specialist",
+      "path": "skills/setup-diagnosis-specialist"
+    },
+    {
+      "name": "dashboard-export-qa",
+      "path": "skills/dashboard-export-qa"
     }
   ],
   "commands": [
@@ -20,6 +47,41 @@
     {
       "name": "setup-compare",
       "path": "commands/setup-compare.md"
+    },
+    {
+      "name": "parser-parity",
+      "path": "commands/parser-parity.md"
+    },
+    {
+      "name": "dashboard-export-qa",
+      "path": "commands/dashboard-export-qa.md"
+    },
+    {
+      "name": "release-hygiene",
+      "path": "commands/release-hygiene.md"
+    },
+    {
+      "name": "docs-sync",
+      "path": "commands/docs-sync.md"
     }
-  ]
+  ],
+  "agents": [
+    {
+      "name": "parser-parity-reviewer",
+      "path": "agents/parser-parity-reviewer.md"
+    },
+    {
+      "name": "dashboard-export-qa-agent",
+      "path": "agents/dashboard-export-qa-agent.md"
+    },
+    {
+      "name": "release-hygiene-agent",
+      "path": "agents/release-hygiene-agent.md"
+    },
+    {
+      "name": "docs-sync-guardian",
+      "path": "agents/docs-sync-guardian.md"
+    }
+  ],
+  "mcpServers": "mcp.json"
 }
