@@ -1,0 +1,38 @@
+---
+description: Shared repository context for the telemetry app and setup-engineering plugin
+alwaysApply: true
+---
+
+# Repository overview
+
+This repo has two primary projects plus root-level domain references:
+
+1. `gtp-telemetry/` - a browser-only React/Vite app that parses local `.ibt` files, analyzes them client-side, and renders a dashboard plus PDF export
+2. `iracing-gtp-engineer-plugin/` - a plugin package with command docs, a core setup-engineering skill, and a standalone Python IBT parser
+3. Root references - `SKILL.md`, `per-car-quirks.md`, `telemetry-channels.md`, and `ibt-parsing-guide.md`
+
+## App architecture
+
+- React 19 + TypeScript + Vite 7 frontend
+- Tailwind CSS 4 for styling, Zustand for state, Recharts for charts
+- `gtp-telemetry/src/store/session-store.ts` owns the file -> validate -> parse -> analyze pipeline
+- `gtp-telemetry/src/lib/ibt-parser.ts` is the browser parser
+- `gtp-telemetry/src/lib/analysis-engine.ts` feeds most dashboard and export views
+- `gtp-telemetry/src/components/dashboard/` contains chart and analysis panels
+- `gtp-telemetry/src/components/shared/` contains reusable UI primitives
+
+## Plugin architecture
+
+- `iracing-gtp-engineer-plugin/plugin.json` is the manifest
+- `iracing-gtp-engineer-plugin/commands/` contains slash command docs
+- `iracing-gtp-engineer-plugin/skills/iracing-gtp-engineer/` is the shipped skill source
+- `iracing-gtp-engineer-plugin/scripts/parse_ibt.py` is the standalone Python parser
+- `iracing-gtp-engineer-plugin/install.ps1` must stay in sync with manifest or layout changes
+
+## Expectations
+
+- Treat the telemetry app as a local-first browser app; do not assume a backend or HTTP API exists
+- Keep committed config rooted at the repository level unless a subproject is intentionally meant to be opened alone
+- Prefer repo-relative guidance over machine-specific assumptions
+- Avoid committed absolute workspace paths in shared config when a repo-relative command works
+- When in doubt about telemetry domain behavior, consult `SKILL.md` and the plugin reference docs before inventing new assumptions
