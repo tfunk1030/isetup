@@ -1,0 +1,105 @@
+---
+description: Project architecture, tech stack, and conventions for the GTP Telemetry Analyzer
+alwaysApply: true
+---
+
+# GTP Telemetry Analyzer — Project Architecture
+
+## Overview
+
+This repo contains two projects:
+
+1. **gtp-telemetry/** — A React web app that parses iRacing `.ibt` telemetry files in the browser and runs a 14-step engineering analysis checklist. No backend; all parsing and analysis happens client-side.
+2. **iracing-gtp-engineer-plugin/** — A Claude skill/plugin for iRacing GTP setup engineering (commands, references, IBT parsing via Python).
+
+## Tech Stack (gtp-telemetry)
+
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Language | TypeScript | ~5.9 |
+| Framework | React | 19 |
+| Build | Vite | 7 |
+| Styling | Tailwind CSS | 4 (via `@tailwindcss/vite`) |
+| State | Zustand | 5 |
+| Charts | Recharts | 3 |
+| PDF Export | jsPDF + html2canvas | |
+| YAML | js-yaml | 4 |
+| Lint | ESLint 9 (flat config) | |
+
+## Directory Layout
+
+```
+gtp-telemetry/
+  src/
+    lib/           # Core logic: IBT parser, analysis engine, car/track profiles, types, constants
+    components/
+      upload/      # DropZone for file upload
+      dashboard/   # 14+ analysis panels (one per checklist item)
+      shared/      # Reusable UI primitives: Card, TabBar, StatusBadge, MetricRow
+    store/         # Zustand store (session-store.ts)
+    data/
+      car-quirks/  # Per-car JSON configuration files
+      tracks/      # Per-track JSON profiles
+```
+
+## Key Conventions
+
+### Imports and Paths
+- Use the `@/` path alias (maps to `src/`) for all imports.
+- Use named exports for components and utilities. Lazy-loaded dashboard panels use dynamic `import()` with `.then()` destructuring.
+
+### TypeScript
+- Strict mode enabled. All types defined in `src/lib/types.ts`.
+- Use `interface` for object shapes, `type` for unions/aliases.
+- Use `as const` assertions for constant objects and arrays.
+- Prefer `Record<K, V>` over index signatures.
+
+### React Components
+- Functional components only, no classes.
+- Props defined as inline interfaces within the component file (not exported separately unless shared).
+- Components are named exports matching the file name.
+- Dashboard panels receive the full `SessionAnalysis` object as an `analysis` prop.
+
+### State Management
+- Single Zustand store in `src/store/session-store.ts`.
+- Store handles the full file → parse → analyze pipeline.
+- No context providers; components access state via `useSessionStore()`.
+
+### Styling
+- Tailwind CSS 4 utility classes exclusively. No CSS modules, no styled-components.
+- Dark motorsport theme using CSS custom properties (`var(--color-*)`) defined in `src/index.css`.
+- Color constants in `src/lib/constants.ts` (COLORS object) for Recharts and programmatic use.
+- Cards use `bg-[var(--color-card)]` with `border-[var(--color-card-border)]` and `rounded-xl`.
+
+### Build & Dev
+- `npm run dev` — Start Vite dev server
+- `npm run build` — `tsc -b && vite build`
+- `npm run lint` — ESLint
+- No test framework is configured yet.
+
+### Code Splitting
+- Dashboard panels are lazy-loaded via `React.lazy()`.
+- Vite manual chunks split recharts, jspdf, html2canvas, and react-vendor bundles.
+
+## Domain Context
+
+This app is for **iRacing GTP Hypercar telemetry analysis**. The root `SKILL.md` contains comprehensive domain knowledge about:
+- The five GTP cars (BMW, Cadillac, Porsche, Acura, Ferrari)
+- IBT binary file format and parsing
+- Telemetry channel names and units
+- Setup parameter engineering (suspension, aero, tyres, diff, brakes)
+- Analysis workflow and thresholds
+
+Reference `SKILL.md` for any iRacing domain questions.
+
+## Key Reference Docs
+
+- `per-car-quirks.md` — Per-car parameter quirks (BMW, Cadillac, Porsche, Acura, Ferrari)
+- `telemetry-channels.md` — Telemetry channel definitions and units
+- `ibt-parsing-guide.md` — IBT binary format spec and parsing logic
+
+## Technical Constraints
+
+- When editing IBT parsing or telemetry logic, preserve compatibility with the binary format spec in `ibt-parsing-guide.md`.
+- The plugin's `parse_ibt.py` and the web app's IBT parser in `gtp-telemetry/src/lib/` must stay aligned on channel names and units.
+- GTP cars: BMW M Hybrid V8, Porsche 963, Cadillac V-Series.R, Acura ARX-06, Ferrari 499P.
