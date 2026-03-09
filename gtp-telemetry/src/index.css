@@ -57,3 +57,12 @@ body {
   border: 1px solid var(--color-card-border) !important;
   border-radius: 8px !important;
 }
+
+/* AI recommendation panel animations */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-slide-in {
+  animation: fadeSlideIn 0.3s ease-out;
+}
