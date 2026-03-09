@@ -1,0 +1,34 @@
+---
+description: Validation checklist for app, parser, and plugin changes in this repository
+globs: gtp-telemetry/**/*.{ts,tsx,md,json},iracing-gtp-engineer-plugin/**/*.{md,json,py},AGENTS.md
+---
+
+# QA and validation guidance
+
+This repo has meaningful browser behavior and parser logic but limited automation, so validation should be explicit.
+
+## Telemetry app checks
+
+Always run from `gtp-telemetry/` after meaningful app changes:
+
+- `npm run lint`
+- `npm run build`
+
+For UI-affecting changes, also prefer a smoke test covering:
+
+1. empty upload screen
+2. `.ibt` upload still starts analysis
+3. dashboard tabs render without runtime errors
+4. PDF export still completes when analysis is present
+
+## Plugin and parser checks
+
+- Verify every file referenced by `iracing-gtp-engineer-plugin/plugin.json` exists
+- If plugin layout changes, confirm `install.ps1` copies the same files the manifest expects
+- For Python parser edits, run `python -m py_compile iracing-gtp-engineer-plugin/scripts/parse_ibt.py`
+
+## Review focus
+
+- Missing-channel regressions
+- Unit mismatches between parser, analysis, dashboard, export, and docs
+- Broken path references between manifest, installer, commands, and reference docs

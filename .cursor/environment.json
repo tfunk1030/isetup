@@ -1,3 +1,10 @@
 {
-  "install": "cd /workspace/gtp-telemetry && npm install"
+  "install": "cd /workspace/gtp-telemetry && npm install",
+  "terminals": [
+    {
+      "name": "vite",
+      "command": "cd /workspace/gtp-telemetry && npm run dev -- --host 0.0.0.0",
+      "ports": [5173]
+    }
+  ]
 }
