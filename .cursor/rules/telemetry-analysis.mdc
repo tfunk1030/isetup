@@ -25,7 +25,7 @@ Use this rule when working on IBT parsing, unit handling, analysis heuristics, o
 
 ## Units and conversions
 
-Raw telemetry units differ from UI-facing units. Convert at the display layer, not in the analysis engine (engine works in SI units).
+Raw telemetry units differ from UI-facing units. In this repository, several core conversions are already applied in `analysis-engine.ts` via `unit-conversions.ts` (for example speed, acceleration, pressure, and ride-height related metrics). Keep conversion behavior consistent with current downstream consumers (dashboard + PDF export), and if you change where conversions happen, update all affected layers together.
 
 | Channel | Raw | Display | Conversion |
 |---------|-----|---------|------------|
