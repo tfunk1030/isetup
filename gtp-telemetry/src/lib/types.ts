@@ -256,6 +256,30 @@ export interface RecommendationSpecific {
 }
 
 export type RecommendationExactness = 'exact' | 'inferred' | 'blocked';
+export type RecommendationConfidenceSource = 'heuristic' | 'counterfactual-model';
+
+export interface RecommendationExpectedGain {
+  metric: 'lapTimeDeltaSec';
+  median: number;
+  interval90: [number, number];
+  source: RecommendationConfidenceSource;
+}
+
+export interface RecommendationConfidenceBreakdown {
+  data: number;
+  mapping: number;
+  model: number;
+  constraints: number;
+}
+
+export type RecommendationGuardrailSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+
+export interface RecommendationTrustGuardrail {
+  id: string;
+  title: string;
+  detail: string;
+  severity: RecommendationGuardrailSeverity;
+}
 
 export interface SetupRecommendation {
   id: string;
@@ -272,6 +296,16 @@ export interface SetupRecommendation {
   exactness?: RecommendationExactness;
   verify?: string[];
   blockedBy?: string[];
+  expectedEffect?: string;
+  expectedEffectTypes?: string[];
+  hypothesis?: string;
+  sideEffectRisks?: string[];
+  expectedGain?: RecommendationExpectedGain;
+  successProbability?: number;
+  confidenceBreakdown?: RecommendationConfidenceBreakdown;
+  rankScore?: number;
+  validationProtocol?: string[];
+  doNotTrustIf?: string[];
   source?: 'rule-engine';
 }
 
@@ -297,6 +331,8 @@ export type SetupParameterGroup =
   | 'tyres'
   | 'electronics';
 
+export type SetupMappingQuality = 'exact' | 'ordered' | 'ambiguous';
+
 export interface NormalizedSetupParameter {
   parameterKey: string;
   displayName: string;
@@ -310,6 +346,8 @@ export interface NormalizedSetupParameter {
   valueType: 'number' | 'string';
   numericValue?: number;
   confidence: ConfidenceLevel;
+  mappingQuality: SetupMappingQuality;
+  candidateSourcePaths?: string[];
 }
 
 export interface NormalizedSetup {
@@ -317,6 +355,8 @@ export interface NormalizedSetup {
   parameters: NormalizedSetupParameter[];
   missingKeys: string[];
   unsupportedKeys: string[];
+  ambiguousKeys: string[];
+  mappingWarnings: string[];
 }
 
 export type ReasoningPhase = 'entry' | 'mid' | 'exit' | 'platform' | 'tyres';
@@ -337,6 +377,20 @@ export interface TelemetryReasoningSignal {
   confidence: ConfidenceLevel;
   evidence: string[];
   candidateParameterKeys: string[];
+}
+
+export type TelemetrySegmentPhase = 'entry' | 'mid' | 'exit';
+export type TelemetrySpeedBand = 'low' | 'medium' | 'high';
+
+export interface TelemetrySegmentFeature {
+  phase: TelemetrySegmentPhase;
+  speedBand: TelemetrySpeedBand;
+  sampleCount: number;
+  avgSpeedKph: number;
+  avgLatG: number;
+  avgLongG: number;
+  avgThrottlePct: number;
+  avgBrakePct: number;
 }
 
 export interface AIRecommendationItem {
@@ -365,6 +419,40 @@ export interface AISetupBrief {
   disagreements: string[];
   source: 'consensus' | 'single-model' | 'rule-engine';
   modelsUsed: string[];
+}
+
+export type RecommendationOutcomeStatus =
+  | 'pending'
+  | 'validated-positive'
+  | 'validated-negative'
+  | 'not-tested';
+
+export interface RecommendationOutcomeItem {
+  recommendationId: string;
+  parameterKey?: string;
+  title: string;
+  action: string;
+  exactness?: RecommendationExactness;
+  confidence: ConfidenceLevel;
+  expectedGain?: RecommendationExpectedGain;
+  successProbability?: number;
+  status: RecommendationOutcomeStatus;
+  observedLapDeltaSec?: number;
+  notes?: string;
+}
+
+export interface RecommendationOutcomeLog {
+  schemaVersion: 'v1';
+  createdAtIso: string;
+  session: {
+    car: string;
+    track: string;
+    bestLapSeconds: number | null;
+    validLapCount: number;
+    dataConfidence: ConfidenceLevel;
+  };
+  trustGuardrails: RecommendationTrustGuardrail[];
+  recommendations: RecommendationOutcomeItem[];
 }
 
 // Constraint violation from domain knowledge
@@ -461,8 +549,10 @@ export interface SessionAnalysis {
   rarb: RARBAnalysis | null;
   splitter: SplitterData | null;
   validLaps: number[];
+  segmentFeatures: TelemetrySegmentFeature[];
   telemetryReasoning: TelemetryReasoningSignal[];
   recommendations: SetupRecommendation[];
+  recommendationGuardrails: RecommendationTrustGuardrail[];
   dataQuality: DataQualityReport;
   carProfileId: string | null;
   trackProfileId: string | null;

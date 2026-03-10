@@ -125,6 +125,8 @@ export function ComparePanel() {
               {analysis && (
                 <button
                   onClick={() => setUseSession(!useSession)}
+                  type="button"
+                  aria-pressed={useSession}
                   className={`inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
                     useSession
                       ? 'bg-[var(--color-green-dim)] text-[var(--color-green)] border-[var(--color-green)]/20'

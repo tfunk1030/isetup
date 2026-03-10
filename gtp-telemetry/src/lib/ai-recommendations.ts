@@ -104,13 +104,26 @@ function validateRecommendation(
     ? [...recommendation.assumptions, `Current value grounded to parsed setup (${matchedParameter.displayValue}) from ${matchedParameter.sourcePath}.`]
     : recommendation.assumptions;
 
+  let exactness = recommendation.exactness;
+  const mappingAssumptions = [...assumptions];
+  if (matchedParameter.mappingQuality === 'ordered' && exactness === 'exact') {
+    exactness = 'inferred';
+    mappingAssumptions.push(`Parameter mapping used ordered fallback (${matchedParameter.sourcePath}).`);
+  } else if (matchedParameter.mappingQuality === 'ambiguous') {
+    exactness = exactness === 'blocked' ? 'blocked' : 'inferred';
+    mappingAssumptions.push(`Parameter mapping is ambiguous; selected ${matchedParameter.sourcePath}.`);
+    if (matchedParameter.candidateSourcePaths && matchedParameter.candidateSourcePaths.length > 1) {
+      mappingAssumptions.push(`Candidate paths: ${matchedParameter.candidateSourcePaths.join(', ')}`);
+    }
+  }
+
   return {
     ...recommendation,
     displayName: matchedParameter.displayName,
     currentValue: matchedParameter.displayValue,
     currentSourcePath: matchedParameter.sourcePath,
-    exactness: recommendation.exactness === 'blocked' ? 'blocked' : recommendation.exactness,
-    assumptions: dedupeStrings(assumptions, 4),
+    exactness: recommendation.exactness === 'blocked' ? 'blocked' : exactness,
+    assumptions: dedupeStrings(mappingAssumptions, 4),
   };
 }
 
@@ -185,6 +198,13 @@ function buildPrompt(analysis: SessionAnalysis): string {
     specifics: r.specifics || [],
     parameterKey: r.parameterKey ?? null,
     exactness: r.exactness ?? 'inferred',
+    expectedEffect: r.expectedEffect ?? null,
+    expectedEffectTypes: r.expectedEffectTypes ?? [],
+    hypothesis: r.hypothesis ?? null,
+    successProbability: r.successProbability ?? null,
+    rankScore: r.rankScore ?? null,
+    sideEffectRisks: r.sideEffectRisks ?? [],
+    doNotTrustIf: r.doNotTrustIf ?? [],
     verify: r.verify || [],
     blockedBy: r.blockedBy || [],
   }));
@@ -215,13 +235,19 @@ function buildPrompt(analysis: SessionAnalysis): string {
       sourcePath: parameter.sourcePath,
       valueType: parameter.valueType,
       confidence: parameter.confidence,
+      mappingQuality: parameter.mappingQuality,
+      candidateSourcePaths: parameter.candidateSourcePaths || [],
     })),
     setupCoverage: {
       architecture: analysis.normalizedSetup.architecture,
       missingKeys: analysis.normalizedSetup.missingKeys,
       unsupportedKeys: analysis.normalizedSetup.unsupportedKeys,
+      ambiguousKeys: analysis.normalizedSetup.ambiguousKeys,
+      mappingWarnings: analysis.normalizedSetup.mappingWarnings,
     },
     telemetryReasoning: analysis.telemetryReasoning,
+    segmentFeatures: analysis.segmentFeatures,
+    recommendationGuardrails: analysis.recommendationGuardrails,
     topRecommendations: topRecs,
     keyMetrics: {
       cleanBottoming: analysis.bottoming.clean,

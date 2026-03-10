@@ -182,6 +182,18 @@ function run(): void {
     baselineResult.recommendations.some((r) => r.category === 'PLATFORM'),
     'baseline should include a platform recommendation'
   );
+  assert(
+    baselineResult.segmentFeatures.length > 0,
+    'baseline should include segment-level telemetry features'
+  );
+  assert(
+    baselineResult.recommendations.some((r) => typeof r.successProbability === 'number'),
+    'baseline recommendations should include success probability metadata'
+  );
+  assert(
+    baselineResult.recommendations.some((r) => typeof r.rankScore === 'number'),
+    'baseline recommendations should include ranking metadata'
+  );
 
   const lowCoverage = buildFixture({
     dropChannels: ['LFtempL', 'LFtempM', 'LFtempR', 'RFtempL', 'RFtempM', 'RFtempR', 'LRtempL', 'LRtempM', 'LRtempR', 'RRtempL', 'RRtempM', 'RRtempR'],
@@ -189,6 +201,10 @@ function run(): void {
   const lowCoverageResult = analyzeSession(lowCoverage.parsed, undefined, undefined, lowCoverage.parserWarnings);
   assert(!('error' in lowCoverageResult), 'low coverage analysis should still succeed');
   assert(lowCoverageResult.dataQuality.sectionConfidence.tyres === 'LOW', 'tyre confidence should degrade when tyre channels are missing');
+  assert(
+    lowCoverageResult.recommendationGuardrails.some((g) => g.id === 'guardrail-missing-channels'),
+    'low coverage should emit sparse-channel trust guardrail'
+  );
 
   const noCritical = buildFixture({ dropChannels: ['Speed'] });
   const noCriticalResult = analyzeSession(noCritical.parsed, undefined, undefined, []);

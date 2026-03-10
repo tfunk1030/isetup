@@ -5,14 +5,19 @@ import { useSessionStore } from '../../store/session-store';
 export function DropZone() {
   const { loading, progress, error, loadFile } = useSessionStore();
   const [dragOver, setDragOver] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const combinedError = localError || error;
 
   const handleFile = useCallback(
     (file: File) => {
+      setLocalError(null);
       if (!file.name.toLowerCase().endsWith('.ibt')) {
+        setLocalError('Unsupported file type. Please upload an iRacing .ibt telemetry file.');
         return;
       }
       if (file.size < 1024) {
+        setLocalError('File is too small to be a valid .ibt telemetry file.');
         return;
       }
       loadFile(file);
@@ -100,11 +105,13 @@ export function DropZone() {
           />
         </div>
 
-        {error && (
-          <p className="text-[var(--color-red)] text-sm mb-4 px-4 py-3 rounded-xl bg-[var(--color-red-dim)] border border-[var(--color-red)]/20">
-            {error}
-          </p>
-        )}
+        <div aria-live="polite" role="status">
+          {combinedError && (
+            <p className="text-[var(--color-red)] text-sm mb-4 px-4 py-3 rounded-xl bg-[var(--color-red-dim)] border border-[var(--color-red)]/20">
+              {combinedError}
+            </p>
+          )}
+        </div>
 
         {/* Supported cars */}
         <div className="flex gap-2 justify-center flex-wrap">

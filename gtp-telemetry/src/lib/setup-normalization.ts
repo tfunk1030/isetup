@@ -3,6 +3,7 @@ import type {
   ConfidenceLevel,
   NormalizedSetup,
   NormalizedSetupParameter,
+  SetupMappingQuality,
   SetupParameterGroup,
 } from './types';
 
@@ -21,6 +22,18 @@ type ParameterSpec = {
   paths: string[][];
   supportedArchitectures?: Array<'lmdh' | 'lmh'>;
   enabled?: (carProfile?: CarProfile) => boolean;
+};
+
+type MatchCandidate = {
+  entry: SetupEntry;
+  score: number;
+  quality: Exclude<SetupMappingQuality, 'ambiguous'>;
+};
+
+type MatchResult = {
+  entry: SetupEntry;
+  quality: SetupMappingQuality;
+  candidateSourcePaths?: string[];
 };
 
 function normalizeToken(value: string): string {
@@ -85,34 +98,121 @@ function toEntries(rawSetup: Record<string, unknown>): SetupEntry[] {
   }));
 }
 
-function matchesPath(entry: SetupEntry, pathSpec: string[]): boolean {
-  const wanted = pathSpec.map(normalizeToken);
-  return wanted.every((part) => entry.segments.some((segment) => segment === part));
+function findContiguousMatchIndex(segments: string[], wanted: string[]): number {
+  if (wanted.length === 0 || wanted.length > segments.length) return -1;
+  for (let i = 0; i <= segments.length - wanted.length; i++) {
+    let ok = true;
+    for (let j = 0; j < wanted.length; j++) {
+      if (segments[i + j] !== wanted[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return i;
+  }
+  return -1;
 }
 
-function findBestEntry(entries: SetupEntry[], pathSpecs: string[][]): SetupEntry | null {
-  let best: SetupEntry | null = null;
-  let bestScore = Number.POSITIVE_INFINITY;
+function orderedSubsequenceIndices(segments: string[], wanted: string[]): number[] | null {
+  if (wanted.length === 0) return [];
+  const indices: number[] = [];
+  let wantedIdx = 0;
+  for (let i = 0; i < segments.length && wantedIdx < wanted.length; i++) {
+    if (segments[i] === wanted[wantedIdx]) {
+      indices.push(i);
+      wantedIdx++;
+    }
+  }
+  return wantedIdx === wanted.length ? indices : null;
+}
+
+function scoreCandidate(entry: SetupEntry, pathSpec: string[]): MatchCandidate | null {
+  const wanted = pathSpec.map(normalizeToken);
+  if (wanted.length === 0) return null;
+
+  const entrySegments = entry.segments;
+  const entryLen = entrySegments.length;
+  const wantedLen = wanted.length;
+
+  // Tier 1: exact segment equality
+  if (entryLen === wantedLen && entrySegments.every((segment, index) => segment === wanted[index])) {
+    return { entry, score: 0, quality: 'exact' };
+  }
+
+  // Tier 2: exact suffix match (strong deterministic match in nested structures)
+  const suffixStart = entryLen - wantedLen;
+  if (
+    suffixStart >= 0
+    && entrySegments.slice(suffixStart).every((segment, index) => segment === wanted[index])
+  ) {
+    return { entry, score: 10 + suffixStart, quality: 'exact' };
+  }
+
+  // Tier 3: contiguous ordered match elsewhere in path
+  const contiguousIdx = findContiguousMatchIndex(entrySegments, wanted);
+  if (contiguousIdx >= 0) {
+    return {
+      entry,
+      score: 100 + contiguousIdx + (entryLen - wantedLen),
+      quality: 'ordered',
+    };
+  }
+
+  // Tier 4: ordered subsequence fallback (still deterministic, but weaker)
+  const orderedIndices = orderedSubsequenceIndices(entrySegments, wanted);
+  if (orderedIndices) {
+    const span = orderedIndices[orderedIndices.length - 1] - orderedIndices[0] + 1;
+    const gaps = Math.max(0, span - wantedLen);
+    return {
+      entry,
+      score: 1000 + gaps + (entryLen - wantedLen),
+      quality: 'ordered',
+    };
+  }
+
+  return null;
+}
+
+function findBestEntry(entries: SetupEntry[], pathSpecs: string[][]): MatchResult | null {
+  const candidates: MatchCandidate[] = [];
 
   for (const entry of entries) {
     for (const pathSpec of pathSpecs) {
-      if (!matchesPath(entry, pathSpec)) continue;
-      const score = entry.segments.length - pathSpec.length;
-      if (score < bestScore) {
-        best = entry;
-        bestScore = score;
+      const candidate = scoreCandidate(entry, pathSpec);
+      if (candidate) {
+        candidates.push(candidate);
       }
     }
   }
 
-  return best;
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    if (a.entry.segments.length !== b.entry.segments.length) return a.entry.segments.length - b.entry.segments.length;
+    return a.entry.path.localeCompare(b.entry.path);
+  });
+
+  const bestScore = candidates[0].score;
+  const bestCandidates = candidates.filter((candidate) => candidate.score === bestScore);
+  const candidatePaths = [...new Set(bestCandidates.map((candidate) => candidate.entry.path))];
+  const chosen = bestCandidates[0];
+
+  return {
+    entry: chosen.entry,
+    quality: candidatePaths.length > 1 ? 'ambiguous' : chosen.quality,
+    candidateSourcePaths: candidatePaths.length > 1 ? candidatePaths : undefined,
+  };
 }
 
-function inferConfidence(entry: SetupEntry): ConfidenceLevel {
-  return entry.path.includes('.') ? 'HIGH' : 'MEDIUM';
+function inferConfidence(quality: SetupMappingQuality): ConfidenceLevel {
+  if (quality === 'exact') return 'HIGH';
+  if (quality === 'ordered') return 'MEDIUM';
+  return 'LOW';
 }
 
-function makeParameter(spec: ParameterSpec, entry: SetupEntry): NormalizedSetupParameter {
+function makeParameter(spec: ParameterSpec, match: MatchResult): NormalizedSetupParameter {
+  const entry = match.entry;
   const rawValue = stringifyValue(entry.value);
   const parsed = parseDisplayValue(rawValue);
   return {
@@ -123,7 +223,9 @@ function makeParameter(spec: ParameterSpec, entry: SetupEntry): NormalizedSetupP
     corner: spec.corner,
     sourcePath: entry.path,
     rawValue,
-    confidence: inferConfidence(entry),
+    confidence: inferConfidence(match.quality),
+    mappingQuality: match.quality,
+    candidateSourcePaths: match.candidateSourcePaths,
     ...parsed,
   };
 }
@@ -372,6 +474,8 @@ export function normalizeSetup(rawSetup: Record<string, unknown>, carProfile?: C
   const parameters: NormalizedSetupParameter[] = [];
   const missingKeys: string[] = [];
   const unsupportedKeys: string[] = [];
+  const ambiguousKeys: string[] = [];
+  const mappingWarnings: string[] = [];
   const architecture = carProfile?.architecture ?? 'unknown';
 
   for (const spec of buildParameterSpecs(carProfile)) {
@@ -383,16 +487,25 @@ export function normalizeSetup(rawSetup: Record<string, unknown>, carProfile?: C
       unsupportedKeys.push(spec.parameterKey);
       continue;
     }
-    const entry = findBestEntry(entries, spec.paths);
-    if (!entry) {
+    const match = findBestEntry(entries, spec.paths);
+    if (!match) {
       missingKeys.push(spec.parameterKey);
       continue;
     }
-    parameters.push(makeParameter(spec, entry));
+    if (match.quality === 'ambiguous') {
+      ambiguousKeys.push(spec.parameterKey);
+      mappingWarnings.push(
+        `${spec.parameterKey}: ambiguous mapping among ${match.candidateSourcePaths?.join(', ')}`
+      );
+    }
+    parameters.push(makeParameter(spec, match));
   }
 
   parameters.sort((a, b) => a.parameterKey.localeCompare(b.parameterKey));
-  return { architecture, parameters, missingKeys, unsupportedKeys };
+  ambiguousKeys.sort((a, b) => a.localeCompare(b));
+  mappingWarnings.sort((a, b) => a.localeCompare(b));
+
+  return { architecture, parameters, missingKeys, unsupportedKeys, ambiguousKeys, mappingWarnings };
 }
 
 export function getNormalizedParameter(

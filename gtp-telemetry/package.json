@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "analysis:regression": "tsx scripts/analysis-regression.ts",
-    "verify": "npm run lint && npm run build && npm run analysis:regression"
+    "recommendation:golden-set": "tsx scripts/recommendation-golden-set.ts",
+    "setup-normalization:regression": "tsx scripts/setup-normalization-regression.ts",
+    "verify": "npm run lint && npm run build && npm run analysis:regression && npm run recommendation:golden-set && npm run setup-normalization:regression"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",
