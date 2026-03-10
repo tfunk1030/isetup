@@ -109,6 +109,8 @@ export const TABS = [
   { id: 'tyres', label: 'Tyres', icon: '\u{1F525}' },
   { id: 'platform', label: 'Aero Platform', icon: '\u{1F4D0}' },
   { id: 'dynamics', label: 'Dynamics', icon: '\u26A1' },
+  { id: 'diagnose', label: 'Diagnose', icon: '\u{1FA7A}' },
+  { id: 'compare', label: 'Compare', icon: '\u{1F504}' },
   { id: 'setup', label: 'Setup', icon: '\u{1F527}' },
 ] as const;
 

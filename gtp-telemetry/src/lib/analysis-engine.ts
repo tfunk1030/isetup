@@ -32,6 +32,7 @@ import type {
   TrackProfile,
   Driver,
   ConfidenceLevel,
+  ConstraintViolation,
   DataQualityReport,
   NormalizedSetup,
   SetupRecommendation,
@@ -42,6 +43,15 @@ import type {
 } from './types';
 import { ANALYSIS_CHANNELS } from './types';
 import { flattenSetup, getNormalizedParameter, normalizeSetup } from './setup-normalization';
+import {
+  SIM_CONSTRAINTS,
+  getImpactRank,
+  getTrackGuidance,
+  getCarDeepKnowledge,
+  getPhysicsVersionNote,
+  isVisionTreadActive,
+  getDamperSlopeRecommendation,
+} from './domain-knowledge';
 
 type Channels = Record<string, Float64Array | null>;
 
@@ -1018,9 +1028,15 @@ function severityWeight(severity: RecommendationSeverity): number {
 }
 
 function recommendationPriority(rec: DraftRecommendation): number {
+  // Use impact hierarchy if we have a parameterKey
+  if (rec.parameterKey) {
+    const rank = getImpactRank(rec.parameterKey);
+    if (rank < 99) return rank;
+  }
+  // Fallback to category-based priority
   const byCategory: Record<DraftRecommendation['category'], number> = {
     AERO: 2,
-    PLATFORM: 2,
+    PLATFORM: 1,
     DYNAMICS: 4,
     TYRES: 7,
     BRAKES: 5,
@@ -1068,6 +1084,55 @@ function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupR
   return withPriority.slice(0, 15);
 }
 
+// ── Constraint Validation (domain knowledge) ──────────────────
+
+function validateConstraints(
+  normalizedSetup: NormalizedSetup,
+  carProfile?: CarProfile,
+): ConstraintViolation[] {
+  const violations: ConstraintViolation[] = [];
+
+  for (const constraint of SIM_CONSTRAINTS) {
+    if (constraint.affectedCars !== 'all' && carProfile && !constraint.affectedCars.includes(carProfile.id)) {
+      continue;
+    }
+
+    if (constraint.id === 'front-rh-floor') {
+      // Check if any recommendation would suggest raising front RH (impossible)
+      // This is more of an awareness constraint — the violation is informational
+      const frontRH = getNormalizedParameter(normalizedSetup, 'platform.frontPushrod');
+      if (frontRH) {
+        // Front RH at 30mm is the baseline — no violation per se, but note it
+        // Only generate violation if setup somehow has front RH below 30mm
+      }
+    }
+
+    if (constraint.id === 'min-cold-pressure') {
+      for (const corner of ['LF', 'RF', 'LR', 'RR'] as const) {
+        const pressure = getNormalizedParameter(normalizedSetup, `tyres.${corner}.startingPressure`);
+        if (pressure?.valueType === 'number' && pressure.numericValue != null) {
+          if (pressure.numericValue <= constraint.limit) {
+            // At or below minimum — note this as a constraint awareness (not a violation since they can't go lower)
+            violations.push({
+              constraintId: constraint.id,
+              description: `${corner} cold pressure at sim minimum (${constraint.limit} kPa). Hot pressures will overshoot 20-24 PSI target.`,
+              parameter: `${corner} starting pressure`,
+              currentValue: pressure.numericValue,
+              limit: constraint.limit,
+              unit: constraint.unit,
+              severity: 'INFO',
+              workaround: constraint.workaround,
+            });
+            break; // Only warn once for pressure constraint
+          }
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
 function buildRecommendations(args: {
   carProfile?: CarProfile;
   trackProfile?: TrackProfile;
@@ -1085,6 +1150,7 @@ function buildRecommendations(args: {
   rideHeightData: RideHeightSample[];
   dataQuality: DataQualityReport;
   validLapCount: number;
+  conditioning: Record<string, ConditioningCorner> | null;
 }): SetupRecommendation[] {
   const recommendations: DraftRecommendation[] = [];
   const {
@@ -1104,6 +1170,7 @@ function buildRecommendations(args: {
     rideHeightData,
     dataQuality,
     validLapCount,
+    conditioning,
   } = args;
 
   const cleanBottoming = bottoming.clean;
@@ -1512,7 +1579,65 @@ function buildRecommendations(args: {
     }
   }
 
-  if (trackProfile?.setupFocus) {
+  // ── Enhanced track guidance (domain knowledge) ─────────────
+  const trackGuidance = trackProfile ? getTrackGuidance(trackProfile.id) : null;
+  if (trackGuidance) {
+    const notes = [
+      `Surface: ${trackGuidance.surfaceType}`,
+      `Wing level: ${trackGuidance.wingLevel}`,
+      `HS comp slope: ${trackGuidance.hsCompSlopeGuidance || 'moderate'}`,
+      ...(trackGuidance.bestCar ? [`Best suited: ${trackGuidance.bestCar}`] : []),
+      ...trackGuidance.specialNotes.slice(0, 3),
+    ];
+    const trackAction = trackGuidance.keyCompromise
+      ? `${trackGuidance.keyCompromise}. ${trackGuidance.specialNotes[0] || ''}`
+      : trackGuidance.specialNotes.join('. ');
+    recommendations.push({
+      id: 'track-guidance',
+      category: 'TRACK',
+      title: `${trackProfile!.name} setup guidance`,
+      action: trackAction,
+      rationale: 'Track-specific engineering knowledge from verified setup data and domain expertise.',
+      confidence: dataQuality.confidence,
+      severity: 'INFO',
+      evidence: notes,
+      exactness: 'inferred',
+      source: 'rule-engine',
+    });
+
+    // Track-specific heave spring check (e.g., Sebring front heave >= 65 N/mm)
+    if (trackGuidance.heaveSpringGuidance?.frontMin_Nmm) {
+      const frontHeave = getNormalizedParameter(normalizedSetup, 'platform.frontHeaveSpring');
+      if (frontHeave?.valueType === 'number' && frontHeave.numericValue != null) {
+        if (frontHeave.numericValue < trackGuidance.heaveSpringGuidance.frontMin_Nmm) {
+          recommendations.push({
+            id: 'track-heave-spring',
+            category: 'PLATFORM',
+            title: `Front heave spring too soft for ${trackProfile!.name}`,
+            action: `Increase ${frontHeave.displayName} from ${frontHeave.displayValue} to at least ${trackGuidance.heaveSpringGuidance.frontMin_Nmm} N/mm. ${trackGuidance.heaveSpringGuidance.rearNotes || ''}`,
+            rationale: `${trackProfile!.name}'s surface requires stiffer front heave springs to prevent platform collapse. Verified from real setup data.`,
+            confidence: 'HIGH',
+            severity: 'CRITICAL',
+            evidence: [
+              `Current front heave: ${frontHeave.displayValue}`,
+              `Track minimum: ${trackGuidance.heaveSpringGuidance.frontMin_Nmm} N/mm`,
+              `Surface type: ${trackGuidance.surfaceType}`,
+            ],
+            specifics: [{
+              parameter: frontHeave.displayName,
+              current: frontHeave.displayValue,
+              target: `≥${trackGuidance.heaveSpringGuidance.frontMin_Nmm} N/mm`,
+              delta: `+${(trackGuidance.heaveSpringGuidance.frontMin_Nmm - frontHeave.numericValue).toFixed(0)} N/mm`,
+            }],
+            parameterKey: frontHeave.parameterKey,
+            exactness: 'exact',
+            verify: ['Check front ride height variance at >200 km/h', 'Confirm clean bottoming events decrease'],
+            source: 'rule-engine',
+          });
+        }
+      }
+    }
+  } else if (trackProfile?.setupFocus) {
     recommendations.push({
       id: 'track-focus',
       category: 'TRACK',
@@ -1530,7 +1655,29 @@ function buildRecommendations(args: {
     });
   }
 
-  if (carProfile?.knownQuirks.length) {
+  // ── Enhanced car knowledge (domain knowledge) ──────────────
+  const carDeep = carProfile ? getCarDeepKnowledge(carProfile.id) : null;
+  if (carDeep) {
+    const keySignals = telemetryReasoning.slice(0, 2).map((signal) => signal.summary);
+    recommendations.push({
+      id: 'car-deep-knowledge',
+      category: 'TRACK',
+      title: `${carProfile!.name} engineering profile`,
+      action: `${carDeep.character}. ${carDeep.weaknesses[0] || ''}`,
+      rationale: 'Car-specific architecture and handling DNA inform how setup changes translate on track.',
+      confidence: dataQuality.confidence,
+      severity: 'INFO',
+      evidence: [
+        `Rotation rank: ${carDeep.naturalRotationRank}/5`,
+        `Aero sensitivity: ${carDeep.aeroPlatformSensitivityRank}/5`,
+        `Diff sensitivity: ${carDeep.diffSensitivity}`,
+        carDeep.damperScaleWarning,
+        ...keySignals,
+      ].slice(0, 5),
+      exactness: 'inferred',
+      source: 'rule-engine',
+    });
+  } else if (carProfile?.knownQuirks.length) {
     const keySignals = telemetryReasoning.slice(0, 2).map((signal) => signal.summary);
     recommendations.push({
       id: 'car-quirks',
@@ -1544,6 +1691,135 @@ function buildRecommendations(args: {
       exactness: 'inferred',
       source: 'rule-engine',
     });
+  }
+
+  // ── In-car adjustment interpretation (domain knowledge) ────
+  const brakeBiasAid = aids['Brake Bias'];
+  if (brakeBiasAid && !brakeBiasAid.constant && (brakeBiasAid.max - brakeBiasAid.min) > 1.0) {
+    recommendations.push({
+      id: 'incar-bias-drift',
+      category: 'BRAKES',
+      title: 'Brake bias drifting during stint',
+      action: `Brake bias moved from ${brakeBiasAid.min.toFixed(1)}% to ${brakeBiasAid.max.toFixed(1)}% during the stint (${(brakeBiasAid.max - brakeBiasAid.min).toFixed(1)}% range). This suggests the base setup bias is wrong for the fuel window. Adjust base bias by ~${((brakeBiasAid.max - brakeBiasAid.min) / 2).toFixed(1)}% toward the average.`,
+      rationale: 'In-car bias drift indicates driver compensating for a base setup mismatch.',
+      confidence: 'MEDIUM',
+      severity: 'WARNING',
+      evidence: [
+        `Bias range: ${brakeBiasAid.min.toFixed(1)}% - ${brakeBiasAid.max.toFixed(1)}%`,
+        `Bias avg: ${brakeBiasAid.avg.toFixed(1)}%`,
+      ],
+      exactness: 'inferred',
+      source: 'rule-engine',
+    });
+  }
+
+  const tcAid = aids['TC1'] || aids['TCLON'];
+  if (tcAid && !tcAid.constant && (tcAid.max - tcAid.min) >= 2) {
+    recommendations.push({
+      id: 'incar-tc-climbing',
+      category: 'AIDS',
+      title: 'TC increasing during stint',
+      action: `TC moved from ${tcAid.min.toFixed(0)} to ${tcAid.max.toFixed(0)} during the stint. This indicates rear tyres are overheating. Reduce diff preload, soften rear ARB, or reduce rear camber to address rear tyre thermal management.`,
+      rationale: 'Increasing TC during a stint is a classic signal of rear tyre degradation.',
+      confidence: 'MEDIUM',
+      severity: 'WARNING',
+      evidence: [
+        `TC range: ${tcAid.min.toFixed(0)} - ${tcAid.max.toFixed(0)}`,
+        `TC avg: ${tcAid.avg.toFixed(1)}`,
+      ],
+      exactness: 'inferred',
+      source: 'rule-engine',
+    });
+  }
+
+  // ── ARB blade maxed-out detection (domain knowledge) ───────
+  const farbAid = aids['FARB'];
+  const rarbAid = aids['RARB'];
+  if (farbAid && (farbAid.min <= 1 || farbAid.max >= 5)) {
+    const maxed = farbAid.max >= 5 ? 'maximum' : 'minimum';
+    recommendations.push({
+      id: 'incar-farb-maxed',
+      category: 'AIDS',
+      title: `Front ARB blades maxed at ${maxed}`,
+      action: `FARB blades reached ${maxed} (${maxed === 'maximum' ? farbAid.max.toFixed(0) : farbAid.min.toFixed(0)}). Step ${maxed === 'maximum' ? 'up' : 'down'} front ARB diameter and set blades to 2-3 for tuning room in both directions.`,
+      rationale: 'Running out of blade range means the ARB diameter is wrong for this track/conditions.',
+      confidence: 'HIGH',
+      severity: 'WARNING',
+      evidence: [`FARB range: ${farbAid.min.toFixed(0)} - ${farbAid.max.toFixed(0)}`],
+      exactness: 'inferred',
+      source: 'rule-engine',
+    });
+  }
+  if (rarbAid && (rarbAid.min <= 1 || rarbAid.max >= 5)) {
+    const maxed = rarbAid.max >= 5 ? 'maximum' : 'minimum';
+    recommendations.push({
+      id: 'incar-rarb-maxed',
+      category: 'AIDS',
+      title: `Rear ARB blades maxed at ${maxed}`,
+      action: `RARB blades reached ${maxed} (${maxed === 'maximum' ? rarbAid.max.toFixed(0) : rarbAid.min.toFixed(0)}). Step ${maxed === 'maximum' ? 'up' : 'down'} rear ARB diameter and set blades to 2-3 for tuning room in both directions.`,
+      rationale: 'Running out of blade range means the ARB diameter is wrong for this track/conditions.',
+      confidence: 'HIGH',
+      severity: 'WARNING',
+      evidence: [`RARB range: ${rarbAid.min.toFixed(0)} - ${rarbAid.max.toFixed(0)}`],
+      exactness: 'inferred',
+      source: 'rule-engine',
+    });
+  }
+
+  // ── Damper slope guidance (domain knowledge) ───────────────
+  const surfaceType = trackGuidance?.surfaceType;
+  for (const [corner, stats] of Object.entries(shockVelStats)) {
+    const slopeRec = getDamperSlopeRecommendation(stats.peak, surfaceType);
+    if (slopeRec) {
+      const hsSlope = getNormalizedParameter(normalizedSetup, `dampers.${corner}.hsSlope`);
+      // Only add if we haven't already added a shock recommendation for this corner
+      const alreadyHasShockRec = recommendations.some(r => r.id === `shock-${corner.toLowerCase()}`);
+      if (!alreadyHasShockRec && hsSlope) {
+        recommendations.push({
+          id: `damper-slope-${corner.toLowerCase()}`,
+          category: 'DYNAMICS',
+          title: `${corner} damper slope optimization`,
+          action: `${slopeRec.slopeRecommendation}. ${slopeRec.rationale}`,
+          rationale: `Peak velocity ${stats.peak.toFixed(0)} mm/s on ${surfaceType || 'mixed'} surface.`,
+          confidence: 'MEDIUM',
+          severity: 'INFO',
+          evidence: [
+            `${corner} peak: ${stats.peak.toFixed(0)} mm/s`,
+            `Surface: ${surfaceType || 'unknown'}`,
+            `Current slope: ${hsSlope.displayValue}`,
+          ],
+          parameterKey: hsSlope.parameterKey,
+          exactness: 'inferred',
+          source: 'rule-engine',
+        });
+      }
+    }
+  }
+
+  // ── Vision tread conditioning awareness ─────────────────────
+  if (isVisionTreadActive() && conditioning) {
+    const condEntries = Object.entries(conditioning) as [string, ConditioningCorner][];
+    const coldCorners = condEntries.filter(
+      ([, c]) => c.last < TYRE_TEMP.OPERATING_TARGET && c.lapsTo85 > validLapCount
+    );
+    if (coldCorners.length > 0 && validLapCount <= 8) {
+      recommendations.push({
+        id: 'vision-tread-conditioning',
+        category: 'TYRES',
+        title: 'Vision tread conditioning in progress',
+        action: `Tyres haven't reached 85°C window after ${validLapCount} laps. This is NORMAL for S1 2026 Vision tread tires — fronts need 13-15 laps, rears need 8-9 laps. Do NOT adjust setup to fix cold tyres in short stints.`,
+        rationale: 'Vision tread tires (S1 2026+) build temperature progressively. A 5-8 lap stint may not reach operating window — this is expected conditioning behavior, not a setup failure.',
+        confidence: 'HIGH',
+        severity: 'INFO',
+        evidence: [
+          `Physics: S1 2026 Vision tread`,
+          `Valid laps: ${validLapCount}`,
+          ...coldCorners.slice(0, 2).map(([corner, data]) => `${corner}: ${data.last.toFixed(1)}°C (needs ~${data.lapsTo85} laps to reach 85°C)`),
+        ],
+        exactness: 'inferred',
+        source: 'rule-engine',
+      });
+    }
   }
 
   if (dataQuality.confidence === 'LOW') {
@@ -1681,7 +1957,14 @@ export function analyzeSession(
     rideHeightData,
     dataQuality,
     validLapCount: validLaps.length,
+    conditioning,
   });
+
+  // Domain knowledge enrichment
+  const constraintViolations = validateConstraints(normalizedSetup, carProfile);
+  const physicsVersionNote = getPhysicsVersionNote();
+  const trackGuidanceData = getTrackGuidance(trackProfile?.id || null);
+  const carDeepKnowledgeData = getCarDeepKnowledge(carProfile?.id || null);
 
   return {
     header,
@@ -1711,5 +1994,9 @@ export function analyzeSession(
     dataQuality,
     carProfileId: carProfile?.id || null,
     trackProfileId: trackProfile?.id || null,
+    constraintViolations,
+    physicsVersionNote,
+    trackGuidance: trackGuidanceData,
+    carDeepKnowledge: carDeepKnowledgeData,
   };
 }

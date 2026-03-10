@@ -54,6 +54,16 @@ export function SessionHeader() {
         >
           Migration: {a.hasBrakeMig ? 'YES' : 'NO'}
         </span>
+        {analysis.physicsVersionNote && (
+          <span className="text-xs px-2.5 py-1 rounded-md bg-blue-500/15 text-blue-400">
+            {'\u{1F9EA}'} {analysis.physicsVersionNote.split(':')[0] || 'Physics'}
+          </span>
+        )}
+        {analysis.normalizedSetup.architecture !== 'unknown' && (
+          <span className="text-xs px-2.5 py-1 rounded-md bg-purple-500/15 text-purple-400">
+            {analysis.normalizedSetup.architecture.toUpperCase()}
+          </span>
+        )}
         <button
           onClick={handleExportPDF}
           disabled={exporting}

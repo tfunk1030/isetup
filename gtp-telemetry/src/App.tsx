@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useSessionStore } from './store/session-store';
 import { DropZone } from './components/upload/DropZone';
 import { SessionHeader } from './components/dashboard/SessionHeader';
@@ -54,6 +54,12 @@ const SetupRecommendationsPanel = lazy(() =>
 );
 const AIRecommendationAssistant = lazy(() =>
   import('./components/dashboard/AIRecommendationAssistant').then((m) => ({ default: m.AIRecommendationAssistant }))
+);
+const DiagnosePanel = lazy(() =>
+  import('./components/diagnose/DiagnosePanel').then((m) => ({ default: m.DiagnosePanel }))
+);
+const ComparePanel = lazy(() =>
+  import('./components/compare/ComparePanel').then((m) => ({ default: m.ComparePanel }))
 );
 
 function Dashboard() {
@@ -144,6 +150,14 @@ function Dashboard() {
             </div>
           )}
 
+          {activeTab === 'diagnose' && (
+            <DiagnosePanel />
+          )}
+
+          {activeTab === 'compare' && (
+            <ComparePanel />
+          )}
+
           {activeTab === 'setup' && (
             <SetupDump analysis={a} />
           )}
@@ -153,11 +167,82 @@ function Dashboard() {
   );
 }
 
+function StandaloneTools() {
+  const [tool, setTool] = useState<'none' | 'diagnose' | 'compare'>('none');
+
+  if (tool === 'diagnose') {
+    return (
+      <div className="min-h-screen p-5 max-w-[1400px] mx-auto">
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setTool('none')}
+            className="text-xs text-[var(--color-accent)] cursor-pointer bg-transparent border-none hover:underline"
+          >
+            {'\u2190'} Back
+          </button>
+          <h2 className="text-lg font-bold text-[var(--color-text)]">
+            {'\u{1FA7A}'} Standalone Diagnose
+          </h2>
+        </div>
+        <Suspense fallback={<div className="text-sm text-[var(--color-text-muted)]">Loading...</div>}>
+          <DiagnosePanel />
+        </Suspense>
+      </div>
+    );
+  }
+
+  if (tool === 'compare') {
+    return (
+      <div className="min-h-screen p-5 max-w-[1400px] mx-auto">
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setTool('none')}
+            className="text-xs text-[var(--color-accent)] cursor-pointer bg-transparent border-none hover:underline"
+          >
+            {'\u2190'} Back
+          </button>
+          <h2 className="text-lg font-bold text-[var(--color-text)]">
+            {'\u{1F504}'} Standalone Compare
+          </h2>
+        </div>
+        <Suspense fallback={<div className="text-sm text-[var(--color-text-muted)]">Loading...</div>}>
+          <ComparePanel />
+        </Suspense>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <DropZone />
+      <div className="max-w-[600px] mx-auto px-5 pb-10 -mt-4">
+        <p className="text-xs text-[var(--color-text-muted)] text-center mb-3">
+          Or use setup tools without telemetry:
+        </p>
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={() => setTool('diagnose')}
+            className="text-xs px-4 py-2 rounded-lg bg-[var(--color-card)] border border-[var(--color-card-border)] text-[var(--color-text)] cursor-pointer hover:border-[var(--color-accent)] transition-colors"
+          >
+            {'\u{1FA7A}'} Diagnose Handling
+          </button>
+          <button
+            onClick={() => setTool('compare')}
+            className="text-xs px-4 py-2 rounded-lg bg-[var(--color-card)] border border-[var(--color-card-border)] text-[var(--color-text)] cursor-pointer hover:border-[var(--color-accent)] transition-colors"
+          >
+            {'\u{1F504}'} Compare Setups
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { analysis } = useSessionStore();
 
   if (!analysis) {
-    return <DropZone />;
+    return <StandaloneTools />;
   }
 
   return <Dashboard />;

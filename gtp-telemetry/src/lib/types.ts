@@ -367,6 +367,77 @@ export interface AISetupBrief {
   modelsUsed: string[];
 }
 
+// Constraint violation from domain knowledge
+export interface ConstraintViolation {
+  constraintId: string;
+  description: string;
+  parameter: string;
+  currentValue?: number;
+  limit: number;
+  unit: string;
+  severity: RecommendationSeverity;
+  workaround: string;
+}
+
+// Diagnose feature types
+export type CornerPhase = 'entry' | 'mid' | 'exit';
+export type SpeedRegime = 'low' | 'mid' | 'high';
+export type HandlingSymptom = 'understeer' | 'oversteer' | 'instability' | 'traction-loss' | 'bottoming';
+
+export interface DiagnoseInput {
+  freeText?: string;
+  phase?: CornerPhase;
+  symptom?: HandlingSymptom;
+  speedRegime?: SpeedRegime;
+  carId?: string;
+  trackId?: string;
+  isWet?: boolean;
+}
+
+export interface ParameterChange {
+  parameterKey: string;
+  displayName: string;
+  direction: string;
+  magnitude: string;
+  tradeoff: string;
+  verifyChannel: string;
+  confidence: ConfidenceLevel;
+  impactRank: number;
+  telemetryEvidence?: string;
+}
+
+export interface DiagnoseResult {
+  matchedSymptom: HandlingSymptom;
+  matchedPhase?: CornerPhase;
+  matchedSpeed?: SpeedRegime;
+  parameterChanges: ParameterChange[];
+  trackNotes: string[];
+  carNotes: string[];
+  wetProtocol: { action: string; magnitude: string; rationale: string }[] | null;
+  physicsNote: string | null;
+}
+
+// Setup compare types
+export interface SetupDiff {
+  parameterKey: string;
+  displayName: string;
+  group: SetupParameterGroup;
+  setupA: { value: string; numeric?: number };
+  setupB: { value: string; numeric?: number };
+  delta: string;
+  handlingImpact: string;
+  impactDirection: 'positive' | 'negative' | 'neutral' | 'context-dependent';
+  impactMagnitude: 'large' | 'medium' | 'small';
+  hierarchyRank: number;
+}
+
+export interface CompareResult {
+  diffs: SetupDiff[];
+  summary: string;
+  setupALabel: string;
+  setupBLabel: string;
+}
+
 export interface SessionAnalysis {
   header: SessionHeader;
   setup: [string, unknown][];
@@ -395,6 +466,11 @@ export interface SessionAnalysis {
   dataQuality: DataQualityReport;
   carProfileId: string | null;
   trackProfileId: string | null;
+  // Domain knowledge enrichment
+  constraintViolations: ConstraintViolation[];
+  physicsVersionNote: string | null;
+  trackGuidance: import('./domain-knowledge').TrackSetupGuidance | null;
+  carDeepKnowledge: import('./domain-knowledge').CarDeepKnowledge | null;
 }
 
 // Car Profile
