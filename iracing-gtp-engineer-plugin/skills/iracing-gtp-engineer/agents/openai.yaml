@@ -1,0 +1,4 @@
+interface:
+  display_name: "iRacing GTP Engineer"
+  short_description: "Diagnose GTP setup issues from telemetry."
+  default_prompt: "Use $iracing-gtp-engineer to analyze my GTP setup or .ibt telemetry and return prioritized setup changes."

@@ -11,6 +11,9 @@ This directory contains the shipped plugin manifest, command docs, core setup-en
   - `/setup-compare`
 - 1 standalone parser:
   - `scripts/parse_ibt.py`
+  - Supports text and JSON output (`--json`)
+  - Supports indexed array channels in CSV export (`CHANNEL[index]`)
+  - Supports downsampled CSV export (`--stride N`)
 
 ## Key files
 

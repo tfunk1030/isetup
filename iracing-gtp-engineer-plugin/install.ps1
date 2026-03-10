@@ -1,4 +1,4 @@
-# iRacing GTP Engineer — Plugin + Skill Installer
+# iRacing GTP Engineer - Plugin + Skill Installer
 # Run from the directory containing this script
 
 $ErrorActionPreference = "Stop"
@@ -19,9 +19,11 @@ if (Test-Path $skillDest) {
 }
 
 New-Item -ItemType Directory -Path "$skillDest\references" -Force | Out-Null
+New-Item -ItemType Directory -Path "$skillDest\agents" -Force | Out-Null
 
 Copy-Item "$scriptDir\skills\iracing-gtp-engineer\SKILL.md" "$skillDest\SKILL.md" -Force
 Copy-Item "$scriptDir\skills\iracing-gtp-engineer\references\*" "$skillDest\references\" -Force
+Copy-Item "$scriptDir\skills\iracing-gtp-engineer\agents\*" "$skillDest\agents\" -Force
 
 $refCount = (Get-ChildItem "$skillDest\references\*.md").Count
 Write-Host "  SKILL.md + $refCount reference files installed" -ForegroundColor Green
@@ -39,12 +41,14 @@ if (Test-Path $pluginDest) {
 New-Item -ItemType Directory -Path "$pluginDest\commands" -Force | Out-Null
 New-Item -ItemType Directory -Path "$pluginDest\scripts" -Force | Out-Null
 New-Item -ItemType Directory -Path "$pluginDest\skills\iracing-gtp-engineer\references" -Force | Out-Null
+New-Item -ItemType Directory -Path "$pluginDest\skills\iracing-gtp-engineer\agents" -Force | Out-Null
 
 Copy-Item "$scriptDir\plugin.json" "$pluginDest\plugin.json" -Force
 Copy-Item "$scriptDir\commands\*" "$pluginDest\commands\" -Force
 Copy-Item "$scriptDir\scripts\*" "$pluginDest\scripts\" -Force
 Copy-Item "$scriptDir\skills\iracing-gtp-engineer\SKILL.md" "$pluginDest\skills\iracing-gtp-engineer\SKILL.md" -Force
 Copy-Item "$scriptDir\skills\iracing-gtp-engineer\references\*" "$pluginDest\skills\iracing-gtp-engineer\references\" -Force
+Copy-Item "$scriptDir\skills\iracing-gtp-engineer\agents\*" "$pluginDest\skills\iracing-gtp-engineer\agents\" -Force
 
 Write-Host "  Plugin installed with commands: analyze-ibt, diagnose, setup-compare" -ForegroundColor Green
 
@@ -56,9 +60,11 @@ $checks = @(
     @{ Path = "$skillDest\references\per-car-quirks.md"; Label = "per-car-quirks.md" },
     @{ Path = "$skillDest\references\telemetry-channels.md"; Label = "telemetry-channels.md" },
     @{ Path = "$skillDest\references\ibt-parsing-guide.md"; Label = "ibt-parsing-guide.md" },
+    @{ Path = "$skillDest\agents\openai.yaml"; Label = "Skill agents/openai.yaml" },
     @{ Path = "$pluginDest\plugin.json"; Label = "Plugin manifest" },
     @{ Path = "$pluginDest\commands\analyze-ibt.md"; Label = "analyze-ibt command" },
-    @{ Path = "$pluginDest\scripts\parse_ibt.py"; Label = "IBT parser script" }
+    @{ Path = "$pluginDest\scripts\parse_ibt.py"; Label = "IBT parser script" },
+    @{ Path = "$pluginDest\skills\iracing-gtp-engineer\agents\openai.yaml"; Label = "Plugin skill agents/openai.yaml" }
 )
 
 $allGood = $true
