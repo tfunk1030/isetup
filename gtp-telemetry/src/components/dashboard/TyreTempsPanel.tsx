@@ -2,6 +2,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine, Legend,
 } from 'recharts';
+import { Flame } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
 import { COLORS, RECOMMENDATION, TYRE_TEMP } from '../../lib/constants';
@@ -26,14 +27,14 @@ export function TyreTempsPanel({ analysis }: Props) {
 
   return (
     <>
-      <Card title="Surface Temperatures" icon={'\u{1F525}'} span={2}>
+      <Card title="Surface Temperatures" icon={<Flame className="w-4 h-4" />} span={2}>
         <div style={{ height: 250 }}>
           <ResponsiveContainer>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} />
+              <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} vertical={false} />
               <XAxis dataKey="lap" stroke={COLORS.textMuted} fontSize={11} tickFormatter={(v) => `L${v}`} />
               <YAxis stroke={COLORS.textMuted} fontSize={11} />
-              <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 8, fontSize: 12 }} />
+              <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 10, fontSize: 12 }} />
               <ReferenceLine y={TYRE_TEMP.OPERATING_TARGET} stroke={COLORS.green} strokeDasharray="5 5" label={{ value: '85\u00B0C', fill: COLORS.green, fontSize: 10 }} />
               <ReferenceLine y={TYRE_TEMP.HOT} stroke={COLORS.red} strokeDasharray="5 5" label={{ value: '105\u00B0C', fill: COLORS.red, fontSize: 10 }} />
               <Line dataKey="LF" stroke={COLORS.LF} strokeWidth={2} dot={{ r: 3 }} />
@@ -50,10 +51,9 @@ export function TyreTempsPanel({ analysis }: Props) {
         const d = last[corner as keyof typeof last] as { O: number; M: number; I: number };
         const avg = (d.O + d.M + d.I) / 3;
         const midVsEdges = d.M - (d.O + d.I) / 2;
-        const icon = avg < TYRE_TEMP.COLD ? '\u{1F535}' : avg <= TYRE_TEMP.HOT ? '\u{1F7E2}' : '\u{1F534}';
 
         return (
-          <Card key={corner} title={`${corner} Detail (Lap ${last.lap})`} icon={icon}>
+          <Card key={corner} title={`${corner} Detail (Lap ${last.lap})`} icon={<Flame className="w-4 h-4" />}>
             <MetricRow label="Outer" value={d.O.toFixed(1)} unit={'\u00B0C'} />
             <MetricRow label="Middle" value={d.M.toFixed(1)} unit={'\u00B0C'} />
             <MetricRow label="Inner" value={d.I.toFixed(1)} unit={'\u00B0C'} />

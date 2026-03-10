@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { GitCompare, BarChart3, Check } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { getAllCars } from '../../lib/car-profiles';
 import { parseSetupInput, compareSetups } from '../../lib/setup-compare';
@@ -13,9 +14,9 @@ function directionColor(d: SetupDiff['impactDirection']): string {
 }
 
 function magnitudeLabel(m: SetupDiff['impactMagnitude']): string {
-  if (m === 'large') return '\u{25C9}';
-  if (m === 'medium') return '\u{25CE}';
-  return '\u{25CB}';
+  if (m === 'large') return '\u25C9';
+  if (m === 'medium') return '\u25CE';
+  return '\u25CB';
 }
 
 const GROUP_LABELS: Record<string, string> = {
@@ -78,7 +79,6 @@ export function ComparePanel() {
     setResult(res);
   };
 
-  // Group diffs by parameter group
   const groupedDiffs = useMemo(() => {
     if (!result) return [];
     const groups = new Map<string, SetupDiff[]>();
@@ -95,20 +95,20 @@ export function ComparePanel() {
   }, [result]);
 
   return (
-    <div className="space-y-4">
-      <Card title="Compare Setups" icon={'\u{1F504}'}>
-        <p className="text-xs text-[var(--color-text-muted)] mb-4">
+    <div className="space-y-5">
+      <Card title="Compare Setups" icon={<GitCompare className="w-4 h-4" />}>
+        <p className="text-xs text-[var(--color-text-muted)] mb-5">
           Paste two iRacing setup exports (YAML or JSON) to see parameter-by-parameter differences with handling impact predictions.
           {analysis && ' Your loaded session setup can be used as Setup A.'}
         </p>
 
         {/* Car selector */}
-        <div className="mb-4">
-          <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Car (for normalization)</label>
+        <div className="mb-5">
+          <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Car (for normalization)</label>
           <select
             value={carId}
             onChange={(e) => setCarId(e.target.value)}
-            className="w-full max-w-[300px] text-xs bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-card-border)] rounded-md px-2 py-1.5"
+            className="input-field w-full max-w-[300px] text-xs rounded-lg px-3 py-2"
           >
             <option value="">Auto-detect</option>
             {allCars.map((c) => (
@@ -118,27 +118,30 @@ export function ComparePanel() {
         </div>
 
         {/* Setup inputs */}
-        <div className="grid gap-4 mb-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
-          {/* Setup A */}
+        <div className="grid gap-5 mb-5" style={{ gridTemplateColumns: '1fr 1fr' }}>
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1.5">
               <label className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Setup A</label>
               {analysis && (
                 <button
                   onClick={() => setUseSession(!useSession)}
-                  className={`text-[10px] px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                  className={`inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
                     useSession
-                      ? 'bg-[var(--color-green)]/15 text-[var(--color-green)] border-[var(--color-green)]/30'
-                      : 'bg-[var(--color-bg)] text-[var(--color-text-muted)] border-[var(--color-card-border)]'
+                      ? 'bg-[var(--color-green-dim)] text-[var(--color-green)] border-[var(--color-green)]/20'
+                      : 'bg-[var(--color-bg-subtle)] text-[var(--color-text-muted)] border-[var(--color-card-border)]'
                   }`}
                 >
-                  {useSession ? '\u2713 Using session' : 'Use session'}
+                  {useSession && <Check className="w-3 h-3" />}
+                  {useSession ? 'Using session' : 'Use session'}
                 </button>
               )}
             </div>
             {useSession && analysis ? (
-              <div className="h-[200px] bg-[var(--color-bg)] border border-[var(--color-card-border)] rounded-md p-3 overflow-auto">
-                <p className="text-xs text-[var(--color-green)] mb-1">{'\u2713'} Using loaded session setup</p>
+              <div className="h-[200px] bg-[var(--color-bg-subtle)] border border-[var(--color-card-border)] rounded-xl p-4 overflow-auto">
+                <p className="text-xs text-[var(--color-green)] mb-1.5 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" />
+                  Using loaded session setup
+                </p>
                 <p className="text-[10px] text-[var(--color-text-muted)]">
                   {analysis.header.car} — {analysis.normalizedSetup.parameters.length} parameters
                 </p>
@@ -148,42 +151,41 @@ export function ComparePanel() {
                 value={textA}
                 onChange={(e) => setTextA(e.target.value)}
                 placeholder="Paste iRacing setup YAML or JSON..."
-                className="w-full h-[200px] text-[11px] font-mono bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-card-border)] rounded-md px-3 py-2 resize-y placeholder:text-[var(--color-text-muted)]/50"
+                className="input-field w-full h-[200px] text-[11px] font-mono rounded-xl px-4 py-3 resize-y"
               />
             )}
           </div>
 
-          {/* Setup B */}
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Setup B</label>
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Setup B</label>
             <textarea
               value={textB}
               onChange={(e) => setTextB(e.target.value)}
               placeholder="Paste iRacing setup YAML or JSON..."
-              className="w-full h-[200px] text-[11px] font-mono bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-card-border)] rounded-md px-3 py-2 resize-y placeholder:text-[var(--color-text-muted)]/50"
+              className="input-field w-full h-[200px] text-[11px] font-mono rounded-xl px-4 py-3 resize-y"
             />
           </div>
         </div>
 
         {error && (
-          <div className="p-2.5 rounded-lg bg-[var(--color-red)]/10 border border-[var(--color-red)]/20 mb-3">
+          <div className="p-3 rounded-xl bg-[var(--color-red)]/8 border border-[var(--color-red)]/20 mb-4">
             <p className="text-xs text-[var(--color-red)]">{error}</p>
           </div>
         )}
 
         <button
           onClick={handleCompare}
-          className="w-full text-sm font-semibold py-2.5 rounded-lg border-none transition-colors cursor-pointer bg-[var(--color-accent)] text-[var(--color-bg)] hover:opacity-90"
+          className="btn-primary w-full inline-flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl"
         >
-          {'\u{1F504}'} Compare
+          <GitCompare className="w-4 h-4" />
+          Compare
         </button>
       </Card>
 
       {/* Results */}
       {result && (
-        <Card title="Comparison Results" icon={'\u{1F4CA}'}>
-          {/* Summary */}
-          <div className="p-3 rounded-lg bg-[var(--color-bg)] mb-4">
+        <Card title="Comparison Results" icon={<BarChart3 className="w-4 h-4" />}>
+          <div className="p-4 rounded-xl bg-[var(--color-bg-subtle)] mb-5">
             <p className="text-xs text-[var(--color-text)]">{result.summary}</p>
           </div>
 
@@ -192,32 +194,32 @@ export function ComparePanel() {
               No meaningful differences detected between the two setups.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-5">
               {groupedDiffs.map((group) => (
                 <div key={group.group}>
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">{group.label}</p>
-                  <div className="border border-[var(--color-card-border)] rounded-lg overflow-hidden">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2.5">{group.label}</p>
+                  <div className="border border-[var(--color-card-border)] rounded-xl overflow-hidden">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="bg-[var(--color-bg)]">
-                          <th className="text-left px-3 py-2 text-[var(--color-text-muted)] font-medium">Parameter</th>
-                          <th className="text-right px-3 py-2 text-[var(--color-text-muted)] font-medium">{result.setupALabel}</th>
-                          <th className="text-right px-3 py-2 text-[var(--color-text-muted)] font-medium">{result.setupBLabel}</th>
-                          <th className="text-right px-3 py-2 text-[var(--color-text-muted)] font-medium">Delta</th>
-                          <th className="text-left px-3 py-2 text-[var(--color-text-muted)] font-medium">Handling Impact</th>
+                        <tr className="bg-[var(--color-bg-subtle)]">
+                          <th className="text-left px-4 py-2.5 text-[var(--color-text-muted)] font-medium">Parameter</th>
+                          <th className="text-right px-4 py-2.5 text-[var(--color-text-muted)] font-medium">{result.setupALabel}</th>
+                          <th className="text-right px-4 py-2.5 text-[var(--color-text-muted)] font-medium">{result.setupBLabel}</th>
+                          <th className="text-right px-4 py-2.5 text-[var(--color-text-muted)] font-medium">Delta</th>
+                          <th className="text-left px-4 py-2.5 text-[var(--color-text-muted)] font-medium">Handling Impact</th>
                         </tr>
                       </thead>
                       <tbody>
                         {group.diffs.map((diff) => (
-                          <tr key={diff.parameterKey} className="border-t border-[var(--color-card-border)]">
-                            <td className="px-3 py-2 text-[var(--color-text)]">{diff.displayName}</td>
-                            <td className="px-3 py-2 text-right font-mono text-[var(--color-text-dim)]">{diff.setupA.value}</td>
-                            <td className="px-3 py-2 text-right font-mono text-[var(--color-text)]">{diff.setupB.value}</td>
-                            <td className="px-3 py-2 text-right font-mono font-semibold" style={{ color: directionColor(diff.impactDirection) }}>
+                          <tr key={diff.parameterKey} className="border-t border-[var(--color-card-border)] hover:bg-[var(--color-surface)]/30 transition-colors">
+                            <td className="px-4 py-2.5 text-[var(--color-text)]">{diff.displayName}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-[var(--color-text-dim)]">{diff.setupA.value}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-[var(--color-text)]">{diff.setupB.value}</td>
+                            <td className="px-4 py-2.5 text-right font-mono font-semibold" style={{ color: directionColor(diff.impactDirection) }}>
                               {diff.delta}
                             </td>
-                            <td className="px-3 py-2">
-                              <span className="inline-flex items-center gap-1">
+                            <td className="px-4 py-2.5">
+                              <span className="inline-flex items-center gap-1.5">
                                 <span title={diff.impactMagnitude} style={{ color: directionColor(diff.impactDirection) }}>
                                   {magnitudeLabel(diff.impactMagnitude)}
                                 </span>

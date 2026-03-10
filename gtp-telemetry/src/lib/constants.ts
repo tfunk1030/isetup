@@ -1,23 +1,28 @@
-// Dark motorsport theme colors
+// Premium dark motorsport theme
 export const COLORS = {
-  bg: '#0a0e17',
-  card: '#111827',
-  cardBorder: '#1e293b',
+  bg: '#06090f',
+  bgSubtle: '#0a0f18',
+  card: '#0d1219',
+  cardHover: '#111827',
+  cardBorder: '#1a2232',
+  cardBorderHover: '#243044',
+  surface: '#151d2b',
   accent: '#f59e0b',
-  accentDim: '#92400e',
-  green: '#10b981',
-  red: '#ef4444',
-  blue: '#3b82f6',
-  cyan: '#06b6d4',
-  purple: '#8b5cf6',
-  text: '#e2e8f0',
+  accentGlow: 'rgba(245, 158, 11, 0.15)',
+  accentDim: '#b27308',
+  green: '#34d399',
+  red: '#f87171',
+  blue: '#60a5fa',
+  cyan: '#22d3ee',
+  purple: '#a78bfa',
+  text: '#f1f5f9',
   textDim: '#94a3b8',
-  textMuted: '#64748b',
+  textMuted: '#475569',
   // Per-corner colors
-  LF: '#3b82f6',
-  RF: '#ef4444',
-  LR: '#06b6d4',
-  RR: '#f59e0b',
+  LF: '#60a5fa',
+  RF: '#f87171',
+  LR: '#22d3ee',
+  RR: '#fbbf24',
 } as const;
 
 // Tyre temperature thresholds (surface temps, °C)
@@ -103,15 +108,15 @@ export const ENGINE_TEMP = {
   OIL_WARNING: 130,
 } as const;
 
-// Tab definitions
+// Tab definitions — icons are Lucide icon names, rendered in TabBar
 export const TABS = [
-  { id: 'overview', label: 'Overview', icon: '\u{1F4CA}' },
-  { id: 'tyres', label: 'Tyres', icon: '\u{1F525}' },
-  { id: 'platform', label: 'Aero Platform', icon: '\u{1F4D0}' },
-  { id: 'dynamics', label: 'Dynamics', icon: '\u26A1' },
-  { id: 'diagnose', label: 'Diagnose', icon: '\u{1FA7A}' },
-  { id: 'compare', label: 'Compare', icon: '\u{1F504}' },
-  { id: 'setup', label: 'Setup', icon: '\u{1F527}' },
+  { id: 'overview', label: 'Overview', icon: 'layout-dashboard' },
+  { id: 'tyres', label: 'Tyres', icon: 'circle-dot' },
+  { id: 'platform', label: 'Aero Platform', icon: 'ruler' },
+  { id: 'dynamics', label: 'Dynamics', icon: 'zap' },
+  { id: 'diagnose', label: 'Diagnose', icon: 'stethoscope' },
+  { id: 'compare', label: 'Compare', icon: 'git-compare' },
+  { id: 'setup', label: 'Setup', icon: 'wrench' },
 ] as const;
 
 // Status badge types

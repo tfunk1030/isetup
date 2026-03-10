@@ -1,3 +1,4 @@
+import { Thermometer } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
 import type { SessionAnalysis } from '../../lib/types';
@@ -10,7 +11,7 @@ export function ConditioningTrend({ analysis }: Props) {
   if (!analysis.conditioning) return null;
 
   return (
-    <Card title="Tyre Conditioning" icon={'\u{1F321}\uFE0F'}>
+    <Card title="Tyre Conditioning" icon={<Thermometer className="w-4 h-4" />}>
       {Object.entries(analysis.conditioning).map(([corner, d]) => (
         <MetricRow
           key={corner}

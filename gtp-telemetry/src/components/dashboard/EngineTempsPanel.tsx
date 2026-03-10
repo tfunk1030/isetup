@@ -2,6 +2,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine, Legend,
 } from 'recharts';
+import { Thermometer } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
 import { COLORS, ENGINE_TEMP } from '../../lib/constants';
@@ -16,7 +17,7 @@ export function EngineTempsPanel({ analysis }: Props) {
 
   if (engineTemps.length === 0) {
     return (
-      <Card title="Engine Temps" icon={'\u{1F321}\uFE0F'}>
+      <Card title="Engine Temps" icon={<Thermometer className="w-4 h-4" />}>
         <p className="text-[var(--color-text-muted)] text-sm">
           Engine temperature channels not available.
         </p>
@@ -29,14 +30,14 @@ export function EngineTempsPanel({ analysis }: Props) {
   const maxOil = Math.max(...engineTemps.map((d) => d.oilTemp));
 
   return (
-    <Card title="Engine Temps" icon={'\u{1F321}\uFE0F'} span={2}>
+    <Card title="Engine Temps" icon={<Thermometer className="w-4 h-4" />} span={2}>
       <div style={{ height: 200 }}>
         <ResponsiveContainer>
           <LineChart data={engineTemps}>
-            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} />
+            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} vertical={false} />
             <XAxis dataKey="lap" stroke={COLORS.textMuted} fontSize={11} tickFormatter={(v) => `L${v}`} />
             <YAxis stroke={COLORS.textMuted} fontSize={11} />
-            <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 8, fontSize: 12 }} />
+            <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 10, fontSize: 12 }} />
             <ReferenceLine y={ENGINE_TEMP.WATER_WARNING} stroke={COLORS.red} strokeDasharray="5 5" label={{ value: `${ENGINE_TEMP.WATER_WARNING}\u00B0C`, fill: COLORS.red, fontSize: 10 }} />
             <Line dataKey="waterTemp" stroke={COLORS.blue} strokeWidth={2} dot={{ r: 3 }} name="Water" />
             <Line dataKey="oilTemp" stroke={COLORS.accent} strokeWidth={2} dot={{ r: 3 }} name="Oil" />
@@ -44,7 +45,7 @@ export function EngineTempsPanel({ analysis }: Props) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <div className="grid grid-cols-2 gap-3 mt-3">
+      <div className="grid grid-cols-2 gap-4 mt-4">
         <MetricRow
           label="Water (last lap)"
           value={lastLap.waterTemp.toFixed(1)}

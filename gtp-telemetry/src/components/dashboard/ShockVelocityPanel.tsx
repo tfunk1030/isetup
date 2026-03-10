@@ -1,3 +1,4 @@
+import { Activity } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
 import { COLORS, SHOCK_VELOCITY } from '../../lib/constants';
@@ -11,12 +12,12 @@ export function ShockVelocityPanel({ analysis }: Props) {
   const stats = analysis.shockVelStats;
 
   return (
-    <Card title="Shock Velocity Analysis" icon={'\u{1F4C8}'}>
+    <Card title="Shock Velocity Analysis" icon={<Activity className="w-4 h-4" />}>
       <div className="grid grid-cols-2 gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         {Object.entries(stats).map(([corner, d]) => (
-          <div key={corner} className="p-3 bg-[var(--color-bg)] rounded-lg">
+          <div key={corner} className="p-4 bg-[var(--color-bg-subtle)] rounded-xl">
             <h4
-              className="mb-2 text-sm font-semibold"
+              className="mb-3 text-sm font-semibold"
               style={{ color: COLORS[corner as keyof typeof COLORS] || COLORS.text }}
             >
               {corner}
@@ -32,9 +33,9 @@ export function ShockVelocityPanel({ analysis }: Props) {
           </div>
         ))}
       </div>
-      <p className="text-[var(--color-text-muted)] text-[11px] mt-3">
+      <p className="text-[var(--color-text-muted)] text-[11px] mt-4">
         Penske: &lt;{SHOCK_VELOCITY.LOW_SPEED_MAX} mm/s = low-speed damper regime.
-        &gt;{SHOCK_VELOCITY.EXTREME} mm/s = extreme events — consider digressive HS comp slope.
+        &gt;{SHOCK_VELOCITY.EXTREME} mm/s = extreme events.
       </p>
     </Card>
   );
