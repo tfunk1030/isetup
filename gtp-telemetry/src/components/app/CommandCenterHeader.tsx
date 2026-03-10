@@ -2,12 +2,12 @@ import { useCallback, useRef, useState } from 'react';
 import {
   FileDown,
   Flag,
-  Home,
   Radar,
   Stethoscope,
   GitCompare,
   Wrench,
   Upload,
+  X,
 } from 'lucide-react';
 import { useSessionStore } from '../../store/session-store';
 import type { SessionAnalysis } from '../../lib/types';
@@ -23,12 +23,6 @@ const NAV_ITEMS: Array<{ id: AppView; label: string; icon: typeof Wrench }> = [
   { id: 'compare', label: 'Compare', icon: GitCompare },
   { id: 'diagnose', label: 'Diagnose', icon: Stethoscope },
 ];
-
-function formatLapTime(seconds: number): string {
-  if (!Number.isFinite(seconds)) return '--';
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${(seconds % 60).toFixed(2).padStart(5, '0')}`;
-}
 
 function severityCount(analysis: SessionAnalysis, severity: SessionAnalysis['recommendations'][number]['severity']): number {
   return analysis.recommendations.filter((item) => item.severity === severity && item.id !== 'all-clear').length;
@@ -66,137 +60,114 @@ export function CommandCenterHeader({ analysis }: CommandCenterHeaderProps) {
     }
   }, [analysis, exporting]);
 
-  const recommendationCount = analysis
-    ? analysis.recommendations.filter((item) => item.id !== 'all-clear').length
-    : 0;
-  const exactCount = analysis
-    ? analysis.recommendations.filter((item) => item.exactness === 'exact' || (item.specifics?.length ?? 0) > 0).length
-    : 0;
+  const criticalCount = analysis ? severityCount(analysis, 'CRITICAL') : 0;
+  const warningCount = analysis ? severityCount(analysis, 'WARNING') : 0;
 
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-card-border)] bg-[rgba(6,10,18,0.88)] backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-6 py-5 xl:px-8">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-              <Flag className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-display text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--color-text-muted)]">
-                iRacing Setup Optimizer
-              </p>
-              <h1 className="font-display text-2xl font-semibold tracking-tight text-[var(--color-text)]">
-                Command Center
-              </h1>
-              <p className="mt-1 text-sm text-[var(--color-text-dim)]">
-                {analysis
-                  ? `${analysis.header.car} at ${analysis.header.track}`
-                  : 'Load telemetry or work directly in compare and diagnose mode.'}
-              </p>
-            </div>
+      <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-6 py-3 xl:px-8">
+        {/* Brand */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-card-border)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+            <Flag className="h-4 w-4" />
           </div>
+          <div className="hidden sm:block">
+            <p className="font-display text-sm font-semibold tracking-tight text-[var(--color-text)]">
+              Command Center
+            </p>
+            {analysis ? (
+              <p className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                <span>{analysis.header.car} at {analysis.header.track}</span>
+                <span className="text-[var(--color-card-border)]">&middot;</span>
+                <StatusBadge status={analysis.dataQuality.confidence === 'HIGH' ? 'OK' : analysis.dataQuality.confidence === 'MEDIUM' ? 'HIGH' : 'RISK'} />
+                {criticalCount > 0 && (
+                  <>
+                    <span className="text-[var(--color-card-border)]">&middot;</span>
+                    <span className="inline-flex items-center gap-1 text-[var(--color-cyan)]">
+                      <Radar className="h-3 w-3" />
+                      {criticalCount} critical
+                    </span>
+                  </>
+                )}
+                {warningCount > 0 && (
+                  <>
+                    <span className="text-[var(--color-card-border)]">&middot;</span>
+                    <span className="inline-flex items-center gap-1 text-[var(--color-accent)]">
+                      {warningCount} warning
+                    </span>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="text-xs text-[var(--color-text-muted)]">iRacing Setup Optimizer</p>
+            )}
+          </div>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+        {/* Nav tabs — centered */}
+        <nav className="ml-auto flex items-center gap-1.5">
+          {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+            const active = appView === id;
+            const disabled = id === 'optimizer' && !analysis;
+            return (
+              <button
+                key={id}
+                type="button"
+                disabled={disabled}
+                onClick={() => setAppView(disabled ? 'landing' : id)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold tracking-wide transition ${
+                  active
+                    ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
+                    : 'border-transparent text-[var(--color-text-dim)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'
+                } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Actions */}
+        <div className="ml-auto flex items-center gap-2">
+          {analysis && (
             <button
               type="button"
               onClick={() => {
-                if (analysis) reset();
-                else setAppView('landing');
+                reset();
               }}
-              className="btn-secondary inline-flex items-center gap-2 px-3.5 py-2 text-xs"
+              className="btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+              title="Clear session"
             >
-              <Home className="h-3.5 w-3.5" />
-              {analysis ? 'Clear Session' : 'Landing'}
+              <X className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">Clear</span>
             </button>
+          )}
 
-            {analysis && (
-              <button
-                type="button"
-                onClick={handleExportPDF}
-                disabled={exporting}
-                className="btn-secondary inline-flex items-center gap-2 px-3.5 py-2 text-xs"
-              >
-                <FileDown className="h-3.5 w-3.5" />
-                {exporting ? 'Exporting...' : 'Export PDF'}
-              </button>
-            )}
+          {analysis && (
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              disabled={exporting}
+              className="btn-secondary inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+            >
+              <FileDown className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">{exporting ? 'Exporting...' : 'PDF'}</span>
+            </button>
+          )}
 
-            <label className="btn-primary inline-flex cursor-pointer items-center gap-2 px-4 py-2 text-xs">
-              <Upload className="h-3.5 w-3.5" />
-              {analysis ? 'Load New IBT' : 'Load IBT'}
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".ibt"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </label>
-          </div>
+          <label className="btn-primary inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs">
+            <Upload className="h-3.5 w-3.5" />
+            Load IBT
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".ibt"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </label>
         </div>
-
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <nav className="flex flex-wrap items-center gap-2">
-            {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
-              const active = appView === id || (!analysis && id === 'optimizer' && appView === 'landing');
-              const disabled = id === 'optimizer' && !analysis;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setAppView(disabled ? 'landing' : id)}
-                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
-                    active
-                      ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
-                      : 'border-[var(--color-card-border)] bg-[var(--color-surface)] text-[var(--color-text-dim)] hover:border-[var(--color-card-border-hover)] hover:text-[var(--color-text)]'
-                  } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {label}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="command-chip">
-              <span>Best Lap</span>
-              <strong>{analysis ? formatLapTime(analysis.bestTime) : '--'}</strong>
-            </div>
-            <div className="command-chip">
-              <span>Valid Laps</span>
-              <strong>{analysis ? analysis.validLaps.length : 0}</strong>
-            </div>
-            <div className="command-chip">
-              <span>Confidence</span>
-              {analysis ? <StatusBadge status={analysis.dataQuality.confidence === 'HIGH' ? 'OK' : analysis.dataQuality.confidence === 'MEDIUM' ? 'HIGH' : 'RISK'} /> : <strong>Idle</strong>}
-            </div>
-            <div className="command-chip">
-              <span>Setup Changes</span>
-              <strong>{analysis ? `${exactCount}/${recommendationCount}` : '0/0'}</strong>
-            </div>
-          </div>
-        </div>
-
-        {analysis && (
-          <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-1.5">
-              <Radar className="h-3.5 w-3.5 text-[var(--color-cyan)]" />
-              {severityCount(analysis, 'CRITICAL')} critical
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-1.5">
-              <Radar className="h-3.5 w-3.5 text-[var(--color-accent)]" />
-              {severityCount(analysis, 'WARNING')} warning
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-1.5">
-              {analysis.header.driver}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-1.5">
-              {analysis.header.duration} • {analysis.header.hz}Hz • {analysis.header.channels} ch
-            </span>
-          </div>
-        )}
       </div>
     </header>
   );

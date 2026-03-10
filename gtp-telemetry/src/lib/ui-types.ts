@@ -6,3 +6,5 @@ export type EvidencePanelId =
   | 'platform'
   | 'dynamics'
   | 'context';
+
+export type WorkspaceTab = 'queue' | 'setup' | 'evidence' | 'context' | 'sessions';

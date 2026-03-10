@@ -3,8 +3,15 @@ import { CommandCenterHeader } from './components/app/CommandCenterHeader';
 import { LandingScreen } from './components/app/LandingScreen';
 import { useSessionStore } from './store/session-store';
 
-const EngineeringWorkspace = lazy(() =>
-  import('./components/optimizer/EngineeringWorkspace')
+const OptimizerWorkspace = lazy(() =>
+  import('./components/optimizer/OptimizerWorkspace').then((m) => ({
+    default: m.OptimizerWorkspace,
+  }))
+);
+const DriverBriefing = lazy(() =>
+  import('./components/optimizer/DriverBriefing').then((m) => ({
+    default: m.DriverBriefing,
+  }))
 );
 const ComparePanel = lazy(() =>
   import('./components/compare/ComparePanel').then((m) => ({ default: m.ComparePanel }))
@@ -23,9 +30,9 @@ function LoadingFallback() {
 }
 
 function ShellBody() {
-  const { analysis, appView } = useSessionStore();
+  const { analysis, appView, parsedData } = useSessionStore();
 
-  if (!analysis && appView === 'landing') {
+  if (!analysis && !parsedData && appView === 'landing') {
     return <LandingScreen />;
   }
 
@@ -34,8 +41,9 @@ function ShellBody() {
       <Suspense fallback={<LoadingFallback />}>
         {appView === 'compare' && <ComparePanel />}
         {appView === 'diagnose' && <DiagnosePanel />}
+        {appView === 'optimizer' && parsedData && !analysis && <DriverBriefing />}
         {(appView === 'optimizer' || (!!analysis && appView === 'landing')) && analysis && (
-          <EngineeringWorkspace />
+          <OptimizerWorkspace analysis={analysis} />
         )}
       </Suspense>
     </main>
