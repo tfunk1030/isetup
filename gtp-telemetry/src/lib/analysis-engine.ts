@@ -54,6 +54,7 @@ import {
   isVisionTreadActive,
   getDamperSlopeRecommendation,
 } from './domain-knowledge';
+import { estimateRecommendationImpact } from './recommendation-impact-model';
 
 type Channels = Record<string, Float64Array | null>;
 
@@ -1185,23 +1186,13 @@ function exactnessScore(exactness: DraftRecommendation['exactness']): number {
   return 0.55;
 }
 
-function categoryGainWeight(category: DraftRecommendation['category']): number {
-  if (category === 'PLATFORM' || category === 'AERO') return 1.15;
-  if (category === 'DYNAMICS' || category === 'BRAKES') return 1.0;
-  if (category === 'TYRES') return 0.9;
-  return 0.75;
-}
-
 function buildMetadataForRecommendation(
   recommendation: DraftRecommendation,
   dataQuality: DataQualityReport,
-  normalizedSetup: NormalizedSetup
+  normalizedSetup: NormalizedSetup,
+  segmentFeatures: TelemetrySegmentFeature[],
+  telemetryReasoning: TelemetryReasoningSignal[]
 ): DraftRecommendation {
-  const gainBySeverity: Record<RecommendationSeverity, { median: number; interval: [number, number] }> = {
-    CRITICAL: { median: -0.18, interval: [-0.34, -0.06] },
-    WARNING: { median: -0.09, interval: [-0.2, -0.02] },
-    INFO: { median: -0.03, interval: [-0.09, 0.02] },
-  };
   const expectedEffectByCategory: Record<DraftRecommendation['category'], string> = {
     PLATFORM: 'Stabilize high-speed aero platform and reduce bottoming events.',
     AERO: 'Recover usable downforce consistency through safer ride-height windows.',
@@ -1233,25 +1224,29 @@ function buildMetadataForRecommendation(
     TRACK: ['Data-driven recommendation quality remains limited until cleaner laps are collected.'],
   };
 
-  const base = gainBySeverity[recommendation.severity];
-  const weight = categoryGainWeight(recommendation.category);
-  const gainBlockedPenalty = recommendation.exactness === 'blocked' ? 0.25 : 1;
-  const median = Number((base.median * weight * gainBlockedPenalty).toFixed(2));
-  const interval90: [number, number] = [
-    Number((base.interval[0] * weight).toFixed(2)),
-    Number((base.interval[1] * weight).toFixed(2)),
-  ];
+  const impactEstimate = estimateRecommendationImpact({
+    recommendation: {
+      category: recommendation.category,
+      severity: recommendation.severity,
+      parameterKey: recommendation.parameterKey,
+      exactness: recommendation.exactness,
+    },
+    architecture: normalizedSetup.architecture,
+    dataConfidence: dataQuality.confidence,
+    segmentFeatures,
+    telemetryReasoning,
+  });
+  const gainMagnitude = Math.abs(impactEstimate.expectedGain.median);
 
   const dataScore = confidenceScore(dataQuality.confidence);
   const mappingScore = exactnessScore(recommendation.exactness);
-  const modelScore = 0.45; // Phase-0 heuristic until counterfactual model is available
+  const modelScore = impactEstimate.modelConfidence;
   const constraintsScore = recommendation.exactness === 'blocked'
     ? 0.2
     : clamp01(0.92 - Math.min((recommendation.blockedBy?.length ?? 0) * 0.1, 0.5));
   const successProbability = clamp01(
     dataScore * 0.4 + mappingScore * 0.3 + modelScore * 0.2 + constraintsScore * 0.1
   );
-  const gainMagnitude = Math.abs(median);
   const sideEffectPenalty = Math.min((sideEffectsByCategory[recommendation.category].length || 0) * 0.03, 0.12);
   const rankingBlockedPenalty = recommendation.exactness === 'blocked' ? 0.25 : 0;
   const rankScore = clamp01(successProbability * 0.55 + Math.min(gainMagnitude / 0.25, 1) * 0.45 - sideEffectPenalty - rankingBlockedPenalty);
@@ -1273,12 +1268,7 @@ function buildMetadataForRecommendation(
     expectedEffectTypes: expectedEffectTypesByCategory[recommendation.category],
     hypothesis: recommendation.rationale,
     sideEffectRisks: sideEffectsByCategory[recommendation.category],
-    expectedGain: {
-      metric: 'lapTimeDeltaSec',
-      median,
-      interval90,
-      source: 'heuristic',
-    },
+    expectedGain: impactEstimate.expectedGain,
     successProbability: Number(successProbability.toFixed(2)),
     confidenceBreakdown: {
       data: Number(dataScore.toFixed(2)),
@@ -1420,6 +1410,7 @@ function buildRecommendations(args: {
   carProfile?: CarProfile;
   trackProfile?: TrackProfile;
   normalizedSetup: NormalizedSetup;
+  segmentFeatures: TelemetrySegmentFeature[];
   telemetryReasoning: TelemetryReasoningSignal[];
   tyreTempData: TyreTempLap[];
   tyrePressureData: TyrePressureLap[];
@@ -1440,6 +1431,7 @@ function buildRecommendations(args: {
     carProfile,
     trackProfile,
     normalizedSetup,
+    segmentFeatures,
     telemetryReasoning,
     tyreTempData,
     tyrePressureData,
@@ -2126,7 +2118,7 @@ function buildRecommendations(args: {
 
   const transparent = applyMappingTransparency(recommendations, normalizedSetup);
   const enriched = transparent.map((recommendation) =>
-    buildMetadataForRecommendation(recommendation, dataQuality, normalizedSetup)
+    buildMetadataForRecommendation(recommendation, dataQuality, normalizedSetup, segmentFeatures, telemetryReasoning)
   );
   return finalizeRecommendations(enriched);
 }
@@ -2232,6 +2224,7 @@ export function analyzeSession(
     carProfile,
     trackProfile,
     normalizedSetup,
+    segmentFeatures,
     telemetryReasoning,
     tyreTempData,
     tyrePressureData,
