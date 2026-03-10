@@ -39,6 +39,8 @@ import type {
   RecommendationSpecific,
   RecommendationSeverity,
   TelemetryReasoningSignal,
+  TelemetrySegmentFeature,
+  RecommendationTrustGuardrail,
   TyreCornerTemp,
 } from './types';
 import { ANALYSIS_CHANNELS } from './types';
@@ -434,6 +436,85 @@ function analyzeGForce(
   }
 
   return { data, peakLat, peakBrake, peakAccel };
+}
+
+function normalizePedalPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 1.2) return Math.max(0, Math.min(100, value * 100));
+  return Math.max(0, Math.min(100, value));
+}
+
+function analyzeSegmentFeatures(
+  ch: Channels,
+  recordCount: number,
+  validMask: Uint8Array
+): TelemetrySegmentFeature[] {
+  if (!ch.Speed || !ch.LapDistPct) return [];
+
+  type Phase = TelemetrySegmentFeature['phase'];
+  type Band = TelemetrySegmentFeature['speedBand'];
+  const phases: readonly Phase[] = ['entry', 'mid', 'exit'];
+  const speedBands: readonly Band[] = ['low', 'medium', 'high'];
+  const accum = new Map<string, {
+    count: number;
+    speed: number;
+    lat: number;
+    long: number;
+    throttle: number;
+    brake: number;
+  }>();
+
+  const phaseForPct = (pct: number): Phase => {
+    if (pct < 0.33) return 'entry';
+    if (pct < 0.67) return 'mid';
+    return 'exit';
+  };
+  const bandForSpeed = (speedKph: number): Band => {
+    if (speedKph < 120) return 'low';
+    if (speedKph < 200) return 'medium';
+    return 'high';
+  };
+
+  for (let i = 0; i < recordCount; i += 4) {
+    if (!validMask[i]) continue;
+    const speedKph = speedToKph(ch.Speed[i]);
+    const pct = ch.LapDistPct[i];
+    if (!Number.isFinite(speedKph) || !Number.isFinite(pct) || pct < 0 || pct > 1.2) continue;
+
+    const phase = phaseForPct(pct);
+    const speedBand = bandForSpeed(speedKph);
+    const key = `${phase}:${speedBand}`;
+    const existing = accum.get(key) ?? { count: 0, speed: 0, lat: 0, long: 0, throttle: 0, brake: 0 };
+
+    existing.count += 1;
+    existing.speed += speedKph;
+    existing.lat += ch.LatAccel && Number.isFinite(ch.LatAccel[i]) ? Math.abs(accelToG(ch.LatAccel[i])) : 0;
+    existing.long += ch.LongAccel && Number.isFinite(ch.LongAccel[i]) ? accelToG(ch.LongAccel[i]) : 0;
+    existing.throttle += ch.Throttle ? normalizePedalPercent(ch.Throttle[i]) : 0;
+    existing.brake += ch.Brake ? normalizePedalPercent(ch.Brake[i]) : 0;
+
+    accum.set(key, existing);
+  }
+
+  const out: TelemetrySegmentFeature[] = [];
+  for (const phase of phases) {
+    for (const speedBand of speedBands) {
+      const key = `${phase}:${speedBand}`;
+      const stat = accum.get(key);
+      if (!stat || stat.count === 0) continue;
+      out.push({
+        phase,
+        speedBand,
+        sampleCount: stat.count,
+        avgSpeedKph: stat.speed / stat.count,
+        avgLatG: stat.lat / stat.count,
+        avgLongG: stat.long / stat.count,
+        avgThrottlePct: stat.throttle / stat.count,
+        avgBrakePct: stat.brake / stat.count,
+      });
+    }
+  }
+  return out;
 }
 
 function analyzeFuel(
@@ -1082,6 +1163,153 @@ function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupR
   });
 
   return withPriority.slice(0, 15);
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function confidenceScore(confidence: ConfidenceLevel): number {
+  if (confidence === 'HIGH') return 0.82;
+  if (confidence === 'MEDIUM') return 0.64;
+  return 0.42;
+}
+
+function exactnessScore(exactness: DraftRecommendation['exactness']): number {
+  if (exactness === 'exact') return 0.92;
+  if (exactness === 'inferred') return 0.62;
+  if (exactness === 'blocked') return 0.22;
+  return 0.55;
+}
+
+function categoryGainWeight(category: DraftRecommendation['category']): number {
+  if (category === 'PLATFORM' || category === 'AERO') return 1.15;
+  if (category === 'DYNAMICS' || category === 'BRAKES') return 1.0;
+  if (category === 'TYRES') return 0.9;
+  return 0.75;
+}
+
+function buildMetadataForRecommendation(
+  recommendation: DraftRecommendation,
+  dataQuality: DataQualityReport,
+  normalizedSetup: NormalizedSetup
+): DraftRecommendation {
+  const gainBySeverity: Record<RecommendationSeverity, { median: number; interval: [number, number] }> = {
+    CRITICAL: { median: -0.18, interval: [-0.34, -0.06] },
+    WARNING: { median: -0.09, interval: [-0.2, -0.02] },
+    INFO: { median: -0.03, interval: [-0.09, 0.02] },
+  };
+  const expectedEffectByCategory: Record<DraftRecommendation['category'], string> = {
+    PLATFORM: 'Stabilize high-speed aero platform and reduce bottoming events.',
+    AERO: 'Recover usable downforce consistency through safer ride-height windows.',
+    TYRES: 'Improve thermal/contact-patch consistency and reduce degradation risk.',
+    DYNAMICS: 'Improve phase-specific balance and transient confidence.',
+    AIDS: 'Reduce in-stint control-map chasing and improve repeatability.',
+    BRAKES: 'Improve entry stability and braking confidence under load transfer.',
+    POWERTRAIN: 'Reduce driveline stress and align power delivery with corner demands.',
+    TRACK: 'Improve recommendation reliability by collecting cleaner context data.',
+  };
+  const sideEffectsByCategory: Record<DraftRecommendation['category'], string[]> = {
+    PLATFORM: ['May increase low-speed understeer if front support is raised too far.'],
+    AERO: ['Extra clearance/support can reduce peak front downforce and initial turn-in bite.'],
+    TYRES: ['Aggressive pressure/camber correction can trade one axle imbalance for another.'],
+    DYNAMICS: ['Balance shifts may move the issue to another corner phase if over-applied.'],
+    AIDS: ['Over-reliance on aids can mask root mechanical balance issues.'],
+    BRAKES: ['Bias changes can improve entry while worsening rear locking or stopping distance.'],
+    POWERTRAIN: ['Powertrain changes may help one sector but hurt top-speed or efficiency.'],
+    TRACK: ['Data-driven recommendation quality remains limited until cleaner laps are collected.'],
+  };
+
+  const base = gainBySeverity[recommendation.severity];
+  const weight = categoryGainWeight(recommendation.category);
+  const blockedPenalty = recommendation.exactness === 'blocked' ? 0.25 : 1;
+  const median = Number((base.median * weight * blockedPenalty).toFixed(2));
+  const interval90: [number, number] = [
+    Number((base.interval[0] * weight).toFixed(2)),
+    Number((base.interval[1] * weight).toFixed(2)),
+  ];
+
+  const dataScore = confidenceScore(dataQuality.confidence);
+  const mappingScore = exactnessScore(recommendation.exactness);
+  const modelScore = 0.45; // Phase-0 heuristic until counterfactual model is available
+  const constraintsScore = recommendation.exactness === 'blocked'
+    ? 0.2
+    : clamp01(0.92 - Math.min((recommendation.blockedBy?.length ?? 0) * 0.1, 0.5));
+  const successProbability = clamp01(
+    dataScore * 0.4 + mappingScore * 0.3 + modelScore * 0.2 + constraintsScore * 0.1
+  );
+
+  const doNotTrustIf = [
+    ...(dataQuality.validLapCount < 3 ? ['Valid laps < 3; collect a longer representative stint first.'] : []),
+    ...(recommendation.exactness === 'blocked' ? ['Recommendation is blocked by setup/constraint limits.'] : []),
+    ...(recommendation.exactness === 'inferred' ? ['Setup mapping is inferred rather than exact.'] : []),
+    ...(normalizedSetup.ambiguousKeys.length > 0 ? [`Setup mapping has ${normalizedSetup.ambiguousKeys.length} ambiguous key(s).`] : []),
+  ];
+
+  const validationProtocol = recommendation.verify && recommendation.verify.length > 0
+    ? recommendation.verify
+    : ['Run a controlled 2-3 lap validation stint and compare key metrics before/after.'];
+
+  return {
+    ...recommendation,
+    expectedEffect: expectedEffectByCategory[recommendation.category],
+    sideEffectRisks: sideEffectsByCategory[recommendation.category],
+    expectedGain: {
+      metric: 'lapTimeDeltaSec',
+      median,
+      interval90,
+      source: 'heuristic',
+    },
+    successProbability: Number(successProbability.toFixed(2)),
+    confidenceBreakdown: {
+      data: Number(dataScore.toFixed(2)),
+      mapping: Number(mappingScore.toFixed(2)),
+      model: modelScore,
+      constraints: Number(constraintsScore.toFixed(2)),
+    },
+    validationProtocol,
+    doNotTrustIf,
+  };
+}
+
+function buildRecommendationGuardrails(
+  dataQuality: DataQualityReport,
+  normalizedSetup: NormalizedSetup
+): RecommendationTrustGuardrail[] {
+  const guardrails: RecommendationTrustGuardrail[] = [];
+  if (dataQuality.validLapCount < 3) {
+    guardrails.push({
+      id: 'guardrail-valid-laps',
+      title: 'Insufficient valid laps',
+      detail: `Only ${dataQuality.validLapCount} valid lap(s) available. Treat all recommendations as provisional.`,
+      severity: 'CRITICAL',
+    });
+  }
+  if (dataQuality.confidence === 'LOW') {
+    guardrails.push({
+      id: 'guardrail-low-confidence',
+      title: 'Low telemetry confidence',
+      detail: 'Channel coverage/quality is degraded. Prefer collecting cleaner telemetry before committing setup direction.',
+      severity: 'WARNING',
+    });
+  }
+  if (normalizedSetup.ambiguousKeys.length > 0) {
+    guardrails.push({
+      id: 'guardrail-ambiguous-mapping',
+      title: 'Ambiguous setup mapping',
+      detail: `${normalizedSetup.ambiguousKeys.length} setup parameter mapping(s) are ambiguous; validate exact garage paths before locking changes.`,
+      severity: 'WARNING',
+    });
+  }
+  if (dataQuality.optionalMissingChannels.length >= 10) {
+    guardrails.push({
+      id: 'guardrail-missing-channels',
+      title: 'Sparse optional channels',
+      detail: `${dataQuality.optionalMissingChannels.length} optional channels missing, limiting confidence in secondary recommendations.`,
+      severity: 'INFO',
+    });
+  }
+  return guardrails;
 }
 
 function applyMappingTransparency(
@@ -1876,7 +2104,11 @@ function buildRecommendations(args: {
     });
   }
 
-  return finalizeRecommendations(applyMappingTransparency(recommendations, normalizedSetup));
+  const transparent = applyMappingTransparency(recommendations, normalizedSetup);
+  const enriched = transparent.map((recommendation) =>
+    buildMetadataForRecommendation(recommendation, dataQuality, normalizedSetup)
+  );
+  return finalizeRecommendations(enriched);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1951,6 +2183,7 @@ export function analyzeSession(
   const tyreTempData = analyzeTyreTemps(ch, laps, validLaps);
   const tyrePressureData = analyzeTyrePressures(ch, laps, validLaps);
   const tyreWearData = analyzeTyreWear(ch, laps, validLaps);
+  const segmentFeatures = analyzeSegmentFeatures(ch, parsed.recordCount, validMask);
   const rideHeightData = analyzeRideHeights(ch, parsed.recordCount, hiSpeedMask);
   const bottoming = analyzeBottoming(ch, parsed.recordCount, hiSpeedMask, trackProfile);
   const shockVelStats = analyzeShockVelocities(ch, parsed.recordCount, hiSpeedMask, parsed.tickRate);
@@ -1994,6 +2227,7 @@ export function analyzeSession(
     validLapCount: validLaps.length,
     conditioning,
   });
+  const recommendationGuardrails = buildRecommendationGuardrails(dataQuality, normalizedSetup);
 
   // Domain knowledge enrichment
   const constraintViolations = validateConstraints(normalizedSetup, carProfile);
@@ -2024,8 +2258,10 @@ export function analyzeSession(
     rarb,
     splitter,
     validLaps,
+    segmentFeatures,
     telemetryReasoning,
     recommendations,
+    recommendationGuardrails,
     dataQuality,
     carProfileId: carProfile?.id || null,
     trackProfileId: trackProfile?.id || null,

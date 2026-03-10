@@ -1,8 +1,13 @@
 import { useState } from 'react';
-import { Brain, ChevronDown, Wind, Ruler, CircleDot, Zap, Shield, OctagonX, Cog, MapPin } from 'lucide-react';
+import { Brain, ChevronDown, Wind, Ruler, CircleDot, Zap, Shield, OctagonX, Cog, MapPin, Save, Download } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { StatusBadge } from '../shared/StatusBadge';
 import type { RecommendationSeverity, SessionAnalysis, SetupRecommendation } from '../../lib/types';
+import {
+  buildRecommendationOutcomeLog,
+  exportRecommendationOutcomeLogs,
+  saveRecommendationOutcomeLog,
+} from '../../lib/recommendation-outcome-log';
 
 interface Props {
   analysis: SessionAnalysis;
@@ -52,6 +57,7 @@ function mappingQualityLabel(quality: 'exact' | 'ordered' | 'ambiguous'): string
 export function SetupRecommendationsPanel({ analysis }: Props) {
   const { recommendations, dataQuality } = analysis;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [logMessage, setLogMessage] = useState<string | null>(null);
 
   const categoryOrder: SetupRecommendation['category'][] = [
     'AERO', 'PLATFORM', 'TYRES', 'DYNAMICS', 'AIDS', 'BRAKES', 'POWERTRAIN', 'TRACK',
@@ -122,6 +128,51 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
         )}
       </div>
 
+      <div className="mb-5 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+          onClick={() => {
+            const log = buildRecommendationOutcomeLog(analysis);
+            const count = saveRecommendationOutcomeLog(log);
+            setLogMessage(`Saved recommendation outcome template (${count} stored).`);
+          }}
+        >
+          <Save className="w-3.5 h-3.5" />
+          Save outcome template
+        </button>
+        <button
+          type="button"
+          className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+          onClick={() => {
+            const { count } = exportRecommendationOutcomeLogs();
+            setLogMessage(`Exported ${count} outcome log(s) to JSON.`);
+          }}
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export outcome logs
+        </button>
+      </div>
+      {logMessage && (
+        <p className="text-[11px] text-[var(--color-text-muted)] mb-5" role="status" aria-live="polite">
+          {logMessage}
+        </p>
+      )}
+
+      {analysis.recommendationGuardrails.length > 0 && (
+        <div className="mb-5 p-4 rounded-xl bg-[var(--color-bg-subtle)] border border-[var(--color-card-border)]">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Trust guardrails</p>
+          <ul className="space-y-2">
+            {analysis.recommendationGuardrails.map((guardrail) => (
+              <li key={guardrail.id} className="text-xs text-[var(--color-text-dim)]">
+                <span className="font-semibold text-[var(--color-text)]">{guardrail.title}:</span>{' '}
+                {guardrail.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Severity summary bar */}
       {recommendations.length > 0 && (
         <div className="flex items-center gap-5 mb-5 px-4 py-3 rounded-xl bg-[var(--color-bg-subtle)]">
@@ -179,6 +230,9 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                     const mappedParameter = item.parameterKey
                       ? analysis.normalizedSetup.parameters.find((parameter) => parameter.parameterKey === item.parameterKey)
                       : undefined;
+                    const validationChecks = item.validationProtocol && item.validationProtocol.length > 0
+                      ? item.validationProtocol
+                      : item.verify ?? [];
                     return (
                       <div
                         key={item.id}
@@ -201,6 +255,29 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                           </div>
                           <p className="text-sm text-[var(--color-text)] font-medium mb-2">{item.action}</p>
                           <p className="text-xs text-[var(--color-text-muted)] mb-2.5">{item.rationale}</p>
+                          {item.expectedEffect && (
+                            <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                              <span className="text-[var(--color-text-dim)] font-semibold">Expected effect:</span> {item.expectedEffect}
+                            </p>
+                          )}
+                          {item.expectedGain && (
+                            <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                              <span className="text-[var(--color-text-dim)] font-semibold">Expected lap delta:</span>{' '}
+                              {item.expectedGain.median.toFixed(2)}s (90% interval {item.expectedGain.interval90[0].toFixed(2)} to {item.expectedGain.interval90[1].toFixed(2)}s)
+                            </p>
+                          )}
+                          {typeof item.successProbability === 'number' && item.confidenceBreakdown && (
+                            <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                              <span className="text-[var(--color-text-dim)] font-semibold">Success probability:</span>{' '}
+                              {(item.successProbability * 100).toFixed(0)}%
+                              {' '}(
+                              data {(item.confidenceBreakdown.data * 100).toFixed(0)}%
+                              {' / '}mapping {(item.confidenceBreakdown.mapping * 100).toFixed(0)}%
+                              {' / '}model {(item.confidenceBreakdown.model * 100).toFixed(0)}%
+                              {' / '}constraints {(item.confidenceBreakdown.constraints * 100).toFixed(0)}%
+                              )
+                            </p>
+                          )}
                           {item.exactness && (
                             <p className="text-[11px] text-[var(--color-text-muted)] mb-2.5">
                               {item.exactness === 'exact' && 'Exact change mapped from parsed setup.'}
@@ -246,12 +323,32 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                               ))}
                             </div>
                           )}
-                          {item.verify && item.verify.length > 0 && (
+                          {validationChecks.length > 0 && (
                             <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
                               <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Verify After Change</p>
                               <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
-                                {item.verify.map((check) => (
+                                {validationChecks.map((check) => (
                                   <li key={check}>{check}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {item.sideEffectRisks && item.sideEffectRisks.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
+                              <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Side effects to watch</p>
+                              <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
+                                {item.sideEffectRisks.map((risk) => (
+                                  <li key={risk}>{risk}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {item.doNotTrustIf && item.doNotTrustIf.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
+                              <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Do not trust if</p>
+                              <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
+                                {item.doNotTrustIf.map((condition) => (
+                                  <li key={condition}>{condition}</li>
                                 ))}
                               </ul>
                             </div>
