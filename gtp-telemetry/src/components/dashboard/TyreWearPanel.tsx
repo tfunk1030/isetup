@@ -1,6 +1,7 @@
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import { CircleDot } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
 import { ANALYSIS, COLORS } from '../../lib/constants';
@@ -15,7 +16,7 @@ export function TyreWearPanel({ analysis }: Props) {
 
   if (tyreWearData.length === 0) {
     return (
-      <Card title="Tyre Wear" icon={'\u{1F6DE}'}>
+      <Card title="Tyre Wear" icon={<CircleDot className="w-4 h-4" />}>
         <p className="text-[var(--color-text-muted)] text-sm">
           No tyre wear data available (new tyres or data not recorded).
         </p>
@@ -34,14 +35,14 @@ export function TyreWearPanel({ analysis }: Props) {
   const last = tyreWearData[tyreWearData.length - 1];
 
   return (
-    <Card title="Tyre Wear (% remaining)" icon={'\u{1F6DE}'} span={2}>
+    <Card title="Tyre Wear (% remaining)" icon={<CircleDot className="w-4 h-4" />} span={2}>
       <div style={{ height: 200 }}>
         <ResponsiveContainer>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} />
+            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} vertical={false} />
             <XAxis dataKey="lap" stroke={COLORS.textMuted} fontSize={11} tickFormatter={(v) => `L${v}`} />
             <YAxis stroke={COLORS.textMuted} fontSize={11} domain={[80, 101]} />
-            <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 8, fontSize: 12 }} />
+            <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 10, fontSize: 12 }} />
             <Line dataKey="LF" stroke={COLORS.LF} strokeWidth={2} dot={{ r: 3 }} />
             <Line dataKey="RF" stroke={COLORS.RF} strokeWidth={2} dot={{ r: 3 }} />
             <Line dataKey="LR" stroke={COLORS.LR} strokeWidth={2} dot={{ r: 3 }} />
@@ -51,7 +52,7 @@ export function TyreWearPanel({ analysis }: Props) {
         </ResponsiveContainer>
       </div>
       {last && (
-        <div className="grid grid-cols-2 gap-3 mt-3">
+        <div className="grid grid-cols-2 gap-3 mt-4">
           {(['LF', 'RF', 'LR', 'RR'] as const).map((corner) => (
             <MetricRow
               key={corner}

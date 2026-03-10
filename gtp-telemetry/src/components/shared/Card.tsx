@@ -2,21 +2,26 @@ import type { ReactNode } from 'react';
 
 interface CardProps {
   title: string;
-  icon: string;
+  icon?: ReactNode;
   children: ReactNode;
   span?: number;
   className?: string;
+  accent?: boolean;
 }
 
-export function Card({ title, icon, children, span = 1, className = '' }: CardProps) {
+export function Card({ title, icon, children, span = 1, className = '', accent = false }: CardProps) {
   return (
     <div
-      className={`bg-[var(--color-card)] border border-[var(--color-card-border)] rounded-xl p-5 ${className}`}
+      className={`glass-card rounded-2xl p-6 animate-fade-slide-in ${accent ? 'glow-accent' : ''} ${className}`}
       style={span > 1 ? { gridColumn: `span ${span}` } : undefined}
     >
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-lg">{icon}</span>
-        <h3 className="text-sm font-bold text-[var(--color-accent)] uppercase tracking-wider">
+      <div className="flex items-center gap-2.5 mb-5">
+        {icon && (
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-accent-glow)] text-[var(--color-accent)]">
+            {icon}
+          </div>
+        )}
+        <h3 className="text-[13px] font-semibold text-[var(--color-text)] tracking-wide">
           {title}
         </h3>
       </div>

@@ -2,6 +2,7 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine, Legend,
 } from 'recharts';
+import { Ruler } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
 import { COLORS } from '../../lib/constants';
@@ -13,15 +14,15 @@ interface Props {
 
 export function RideHeightScatter({ analysis }: Props) {
   return (
-    <Card title="Ride Heights at Speed (>200 km/h)" icon={'\u{1F4D0}'}>
+    <Card title="Ride Heights at Speed (>200 km/h)" icon={<Ruler className="w-4 h-4" />}>
       <div style={{ height: 300 }}>
         <ResponsiveContainer>
           <ScatterChart>
-            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} />
+            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} vertical={false} />
             <XAxis dataKey="pct" name="Track %" stroke={COLORS.textMuted} fontSize={11} domain={[0, 100]} />
             <YAxis name="RH (mm)" stroke={COLORS.textMuted} fontSize={11} domain={[-15, 60]} />
             <Tooltip
-              contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 8, fontSize: 11 }}
+              contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 10, fontSize: 11 }}
               formatter={(v, name) => [`${Number(v).toFixed(1)} mm`, name]}
             />
             <ReferenceLine y={0} stroke={COLORS.red} strokeWidth={2} label={{ value: 'BOTTOMING', fill: COLORS.red, fontSize: 10 }} />
@@ -31,12 +32,12 @@ export function RideHeightScatter({ analysis }: Props) {
           </ScatterChart>
         </ResponsiveContainer>
       </div>
-      <div className="grid grid-cols-2 gap-3 mt-3">
+      <div className="grid grid-cols-2 gap-4 mt-4">
         <div>
           <MetricRow label="Clean-Track Bottoming" value={analysis.bottoming.clean} status={analysis.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
           <MetricRow label="Kerb Bottoming" value={analysis.bottoming.kerb} />
         </div>
-        <div>
+        <div className="flex items-center">
           <p className="text-[var(--color-text-muted)] text-[11px]">
             Kerb strikes are driving choices, not setup failures. Only clean-track bottoming indicates a platform problem.
           </p>

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
+import { ArrowLeft, Stethoscope, GitCompare } from 'lucide-react';
 import { useSessionStore } from './store/session-store';
 import { DropZone } from './components/upload/DropZone';
 import { SessionHeader } from './components/dashboard/SessionHeader';
@@ -6,6 +7,9 @@ import { TabBar } from './components/shared/TabBar';
 import { TABS } from './lib/constants';
 import { Card } from './components/shared/Card';
 import { MetricRow } from './components/shared/MetricRow';
+import {
+  ClipboardList, Shield, Zap, SlidersHorizontal,
+} from 'lucide-react';
 
 const LapTimesChart = lazy(() =>
   import('./components/dashboard/LapTimesChart').then((m) => ({ default: m.LapTimesChart }))
@@ -62,6 +66,15 @@ const ComparePanel = lazy(() =>
   import('./components/compare/ComparePanel').then((m) => ({ default: m.ComparePanel }))
 );
 
+function LoadingFallback() {
+  return (
+    <div className="flex items-center gap-3 px-4 py-6">
+      <div className="w-4 h-4 rounded-full border-2 border-[var(--color-accent)] border-t-transparent animate-spin" />
+      <span className="text-sm text-[var(--color-text-muted)]">Loading analysis modules...</span>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { analysis, activeTab, setActiveTab } = useSessionStore();
   if (!analysis) return null;
@@ -69,26 +82,20 @@ function Dashboard() {
   const a = analysis;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[var(--color-bg)]">
       <SessionHeader />
       <TabBar tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <div className="p-5 max-w-[1400px] mx-auto">
-        <Suspense
-          fallback={
-            <div className="text-sm text-[var(--color-text-muted)] px-2 py-3">
-              Loading analysis modules...
-            </div>
-          }
-        >
+      <div className="p-6 max-w-[1440px] mx-auto">
+        <Suspense fallback={<LoadingFallback />}>
           {activeTab === 'overview' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <SetupRecommendationsPanel analysis={a} />
               <AIRecommendationAssistant analysis={a} />
-              <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+              <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
                 <LapTimesChart analysis={a} />
 
-                <Card title="Session" icon={'\u{1F4CB}'}>
+                <Card title="Session" icon={<ClipboardList className="w-4 h-4" />}>
                   <MetricRow label="Air Temp" value={a.header.airTemp} />
                   <MetricRow label="Track Temp" value={a.header.trackTemp} />
                   <MetricRow label="Fuel Start" value={a.fuel.start?.toFixed(1)} unit="L" />
@@ -96,7 +103,7 @@ function Dashboard() {
                   <MetricRow label="Range" value={`~${Math.floor(a.fuel.range)}`} unit="laps" />
                 </Card>
 
-                <Card title="Platform Safety" icon={'\u{1F6E1}\uFE0F'}>
+                <Card title="Platform Safety" icon={<Shield className="w-4 h-4" />}>
                   <MetricRow label="Clean Bottoming" value={a.bottoming.clean} status={a.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
                   <MetricRow label="Kerb Bottoming" value={a.bottoming.kerb} status="OK" />
                   {a.shockVelStats.RR && (
@@ -107,13 +114,13 @@ function Dashboard() {
                   )}
                 </Card>
 
-                <Card title="G-Force Envelope" icon={'\u26A1'}>
+                <Card title="G-Force Envelope" icon={<Zap className="w-4 h-4" />}>
                   <MetricRow label="Peak Lateral" value={a.peakLatG.toFixed(2)} unit="g" />
                   <MetricRow label="Peak Braking" value={a.peakBrakeG.toFixed(2)} unit="g" />
                   <MetricRow label="Peak Accel" value={a.peakAccelG.toFixed(2)} unit="g" />
                 </Card>
 
-                <Card title="Driver Aids" icon={'\u{1F39B}\uFE0F'}>
+                <Card title="Driver Aids" icon={<SlidersHorizontal className="w-4 h-4" />}>
                   {Object.entries(a.aids).map(([name, d]) => (
                     <MetricRow key={name} label={name} value={d.avg.toFixed(1)} status={d.constant ? 'OK' : 'HIGH'} />
                   ))}
@@ -125,7 +132,7 @@ function Dashboard() {
           )}
 
           {activeTab === 'tyres' && (
-            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+            <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
               <TyreTempsPanel analysis={a} />
               <TyrePressuresChart analysis={a} />
               <TyreWearPanel analysis={a} />
@@ -133,7 +140,7 @@ function Dashboard() {
           )}
 
           {activeTab === 'platform' && (
-            <div className="grid gap-4" style={{ gridTemplateColumns: '1fr' }}>
+            <div className="grid gap-5" style={{ gridTemplateColumns: '1fr' }}>
               <RideHeightScatter analysis={a} />
               <SplitterAnalysis analysis={a} />
               <ShockVelocityPanel analysis={a} />
@@ -141,7 +148,7 @@ function Dashboard() {
           )}
 
           {activeTab === 'dynamics' && (
-            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))' }}>
+            <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}>
               <GForceScatter analysis={a} />
               <DriverAidsPanel analysis={a} />
               <RARBAnalysis analysis={a} />
@@ -172,19 +179,21 @@ function StandaloneTools() {
 
   if (tool === 'diagnose') {
     return (
-      <div className="min-h-screen p-5 max-w-[1400px] mx-auto">
-        <div className="flex items-center gap-3 mb-4">
+      <div className="min-h-screen p-6 max-w-[1440px] mx-auto">
+        <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => setTool('none')}
-            className="text-xs text-[var(--color-accent)] cursor-pointer bg-transparent border-none hover:underline"
+            className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
           >
-            {'\u2190'} Back
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back
           </button>
-          <h2 className="text-lg font-bold text-[var(--color-text)]">
-            {'\u{1FA7A}'} Standalone Diagnose
+          <h2 className="text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
+            <Stethoscope className="w-5 h-5 text-[var(--color-accent)]" />
+            Standalone Diagnose
           </h2>
         </div>
-        <Suspense fallback={<div className="text-sm text-[var(--color-text-muted)]">Loading...</div>}>
+        <Suspense fallback={<LoadingFallback />}>
           <DiagnosePanel />
         </Suspense>
       </div>
@@ -193,19 +202,21 @@ function StandaloneTools() {
 
   if (tool === 'compare') {
     return (
-      <div className="min-h-screen p-5 max-w-[1400px] mx-auto">
-        <div className="flex items-center gap-3 mb-4">
+      <div className="min-h-screen p-6 max-w-[1440px] mx-auto">
+        <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => setTool('none')}
-            className="text-xs text-[var(--color-accent)] cursor-pointer bg-transparent border-none hover:underline"
+            className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
           >
-            {'\u2190'} Back
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back
           </button>
-          <h2 className="text-lg font-bold text-[var(--color-text)]">
-            {'\u{1F504}'} Standalone Compare
+          <h2 className="text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
+            <GitCompare className="w-5 h-5 text-[var(--color-accent)]" />
+            Standalone Compare
           </h2>
         </div>
-        <Suspense fallback={<div className="text-sm text-[var(--color-text-muted)]">Loading...</div>}>
+        <Suspense fallback={<LoadingFallback />}>
           <ComparePanel />
         </Suspense>
       </div>
@@ -215,22 +226,24 @@ function StandaloneTools() {
   return (
     <div>
       <DropZone />
-      <div className="max-w-[600px] mx-auto px-5 pb-10 -mt-4">
-        <p className="text-xs text-[var(--color-text-muted)] text-center mb-3">
+      <div className="max-w-[600px] mx-auto px-6 pb-12 -mt-4">
+        <p className="text-xs text-[var(--color-text-muted)] text-center mb-4">
           Or use setup tools without telemetry:
         </p>
         <div className="flex gap-3 justify-center">
           <button
             onClick={() => setTool('diagnose')}
-            className="text-xs px-4 py-2 rounded-lg bg-[var(--color-card)] border border-[var(--color-card-border)] text-[var(--color-text)] cursor-pointer hover:border-[var(--color-accent)] transition-colors"
+            className="btn-secondary inline-flex items-center gap-2 text-xs px-5 py-2.5 rounded-xl"
           >
-            {'\u{1FA7A}'} Diagnose Handling
+            <Stethoscope className="w-4 h-4" />
+            Diagnose Handling
           </button>
           <button
             onClick={() => setTool('compare')}
-            className="text-xs px-4 py-2 rounded-lg bg-[var(--color-card)] border border-[var(--color-card-border)] text-[var(--color-text)] cursor-pointer hover:border-[var(--color-accent)] transition-colors"
+            className="btn-secondary inline-flex items-center gap-2 text-xs px-5 py-2.5 rounded-xl"
           >
-            {'\u{1F504}'} Compare Setups
+            <GitCompare className="w-4 h-4" />
+            Compare Setups
           </button>
         </div>
       </div>

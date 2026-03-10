@@ -1,4 +1,7 @@
 import { useState, useMemo } from 'react';
+import {
+  Stethoscope, Search, CornerDownRight, Target, Car, CloudRain, Sun, FileText, Droplets,
+} from 'lucide-react';
 import { Card } from '../shared/Card';
 import { getAllCars } from '../../lib/car-profiles';
 import { getAllTracks } from '../../lib/track-profiles';
@@ -12,10 +15,10 @@ import type {
   ConfidenceLevel,
 } from '../../lib/types';
 
-const PHASES: { id: CornerPhase; label: string; icon: string }[] = [
-  { id: 'entry', label: 'Entry', icon: '\u21A9\uFE0F' },
-  { id: 'mid', label: 'Mid', icon: '\u{1F3AF}' },
-  { id: 'exit', label: 'Exit', icon: '\u{1F3CE}\uFE0F' },
+const PHASES: { id: CornerPhase; label: string }[] = [
+  { id: 'entry', label: 'Entry' },
+  { id: 'mid', label: 'Mid' },
+  { id: 'exit', label: 'Exit' },
 ];
 
 const SYMPTOMS: { id: HandlingSymptom; label: string; desc: string }[] = [
@@ -70,9 +73,9 @@ export function DiagnosePanel() {
   const hasInput = phase || symptom || speed || freeText.trim();
 
   return (
-    <div className="space-y-4">
-      <Card title="Diagnose Handling Issue" icon={'\u{1FA7A}'}>
-        <p className="text-xs text-[var(--color-text-muted)] mb-4">
+    <div className="space-y-5">
+      <Card title="Diagnose Handling Issue" icon={<Stethoscope className="w-4 h-4" />}>
+        <p className="text-xs text-[var(--color-text-muted)] mb-5">
           Describe a handling problem — select from the grid below or type in free text. The engine matches diagnostic rules and returns prioritised setup changes.
           {analysis && (
             <span className="text-[var(--color-green)]"> Telemetry loaded — results will cross-reference your session data.</span>
@@ -80,13 +83,13 @@ export function DiagnosePanel() {
         </p>
 
         {/* Car / Track / Wet selectors */}
-        <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+        <div className="grid gap-4 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Car</label>
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Car</label>
             <select
               value={carId}
               onChange={(e) => setCarId(e.target.value)}
-              className="w-full text-xs bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-card-border)] rounded-md px-2 py-1.5"
+              className="input-field w-full text-xs rounded-lg px-3 py-2"
             >
               <option value="">Any car</option>
               {allCars.map((c) => (
@@ -95,11 +98,11 @@ export function DiagnosePanel() {
             </select>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Track</label>
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Track</label>
             <select
               value={trackId}
               onChange={(e) => setTrackId(e.target.value)}
-              className="w-full text-xs bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-card-border)] rounded-md px-2 py-1.5"
+              className="input-field w-full text-xs rounded-lg px-3 py-2"
             >
               <option value="">Any track</option>
               {allTracks.map((t) => (
@@ -110,29 +113,30 @@ export function DiagnosePanel() {
           <div className="flex items-end">
             <button
               onClick={() => setIsWet(!isWet)}
-              className={`text-xs px-3 py-1.5 rounded-md border transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg border transition-all cursor-pointer ${
                 isWet
-                  ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
-                  : 'bg-[var(--color-bg)] text-[var(--color-text-muted)] border-[var(--color-card-border)]'
+                  ? 'bg-[var(--color-blue-dim)] text-[var(--color-blue)] border-[var(--color-blue)]/30'
+                  : 'bg-[var(--color-bg-subtle)] text-[var(--color-text-muted)] border-[var(--color-card-border)]'
               }`}
             >
-              {isWet ? '\u{1F327}\uFE0F Wet' : '\u2600\uFE0F Dry'}
+              {isWet ? <CloudRain className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+              {isWet ? 'Wet' : 'Dry'}
             </button>
           </div>
         </div>
 
         {/* Symptom selector grid */}
-        <div className="mb-4">
+        <div className="mb-5">
           <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Symptom</label>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
             {SYMPTOMS.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSymptom(symptom === s.id ? null : s.id)}
-                className={`text-left p-2.5 rounded-lg border transition-colors cursor-pointer ${
+                className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
                   symptom === s.id
-                    ? 'bg-[var(--color-accent-dim)]/20 border-[var(--color-accent)] text-[var(--color-accent)]'
-                    : 'bg-[var(--color-bg)] border-[var(--color-card-border)] text-[var(--color-text)]'
+                    ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)] shadow-[0_0_12px_var(--color-accent-glow)]'
+                    : 'bg-[var(--color-bg-subtle)] border-[var(--color-card-border)] text-[var(--color-text)] hover:border-[var(--color-card-border-hover)]'
                 }`}
               >
                 <div className="text-xs font-semibold">{s.label}</div>
@@ -143,7 +147,7 @@ export function DiagnosePanel() {
         </div>
 
         {/* Phase selector */}
-        <div className="flex gap-3 mb-4">
+        <div className="flex gap-4 mb-5">
           <div className="flex-1">
             <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Corner Phase</label>
             <div className="flex gap-2">
@@ -151,13 +155,14 @@ export function DiagnosePanel() {
                 <button
                   key={p.id}
                   onClick={() => setPhase(phase === p.id ? null : p.id)}
-                  className={`flex-1 text-xs py-1.5 px-3 rounded-md border transition-colors cursor-pointer ${
+                  className={`flex-1 inline-flex items-center justify-center gap-1.5 text-xs py-2 px-3 rounded-lg border transition-all cursor-pointer ${
                     phase === p.id
-                      ? 'bg-[var(--color-accent-dim)]/20 border-[var(--color-accent)] text-[var(--color-accent)]'
-                      : 'bg-[var(--color-bg)] border-[var(--color-card-border)] text-[var(--color-text-muted)]'
+                      ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)]'
+                      : 'bg-[var(--color-bg-subtle)] border-[var(--color-card-border)] text-[var(--color-text-muted)] hover:border-[var(--color-card-border-hover)]'
                   }`}
                 >
-                  {p.icon} {p.label}
+                  <CornerDownRight className="w-3 h-3" />
+                  {p.label}
                 </button>
               ))}
             </div>
@@ -169,10 +174,10 @@ export function DiagnosePanel() {
                 <button
                   key={s.id}
                   onClick={() => setSpeed(speed === s.id ? null : s.id)}
-                  className={`flex-1 text-xs py-1.5 px-3 rounded-md border transition-colors cursor-pointer ${
+                  className={`flex-1 text-xs py-2 px-3 rounded-lg border transition-all cursor-pointer ${
                     speed === s.id
-                      ? 'bg-[var(--color-accent-dim)]/20 border-[var(--color-accent)] text-[var(--color-accent)]'
-                      : 'bg-[var(--color-bg)] border-[var(--color-card-border)] text-[var(--color-text-muted)]'
+                      ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)]'
+                      : 'bg-[var(--color-bg-subtle)] border-[var(--color-card-border)] text-[var(--color-text-muted)] hover:border-[var(--color-card-border-hover)]'
                   }`}
                 >
                   {s.label}
@@ -183,13 +188,13 @@ export function DiagnosePanel() {
         </div>
 
         {/* Free text input */}
-        <div className="mb-4">
-          <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Or describe in plain English</label>
+        <div className="mb-5">
+          <label className="block text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Or describe in plain English</label>
           <textarea
             value={freeText}
             onChange={(e) => setFreeText(e.target.value)}
             placeholder="e.g. 'Car pushes on entry at low-speed corners' or 'Oversteer on power at Eau Rouge'"
-            className="w-full text-xs bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-card-border)] rounded-md px-3 py-2 resize-y min-h-[60px] placeholder:text-[var(--color-text-muted)]/50"
+            className="input-field w-full text-xs rounded-xl px-4 py-3 resize-y min-h-[60px]"
           />
         </div>
 
@@ -197,84 +202,85 @@ export function DiagnosePanel() {
         <button
           onClick={handleDiagnose}
           disabled={!hasInput}
-          className={`w-full text-sm font-semibold py-2.5 rounded-lg border-none transition-colors cursor-pointer ${
+          className={`w-full inline-flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl transition-all ${
             hasInput
-              ? 'bg-[var(--color-accent)] text-[var(--color-bg)] hover:opacity-90'
-              : 'bg-[var(--color-bg)] text-[var(--color-text-muted)] cursor-not-allowed'
+              ? 'btn-primary'
+              : 'bg-[var(--color-bg-subtle)] text-[var(--color-text-muted)] cursor-not-allowed border-none'
           }`}
         >
-          {'\u{1FA7A}'} Diagnose
+          <Stethoscope className="w-4 h-4" />
+          Diagnose
         </button>
       </Card>
 
       {/* Results */}
       {result && (
         <>
-          {/* Matched context */}
-          <Card title="Diagnosis" icon={'\u{1F50D}'}>
-            <div className="flex flex-wrap gap-2 mb-3">
-              <span className="text-xs px-2.5 py-1 rounded-md bg-[var(--color-accent-dim)]/20 text-[var(--color-accent)]">
+          <Card title="Diagnosis" icon={<Search className="w-4 h-4" />}>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[var(--color-accent-glow)] text-[var(--color-accent)] font-medium">
                 {result.matchedSymptom}
               </span>
               {result.matchedPhase && (
-                <span className="text-xs px-2.5 py-1 rounded-md bg-[var(--color-bg)] text-[var(--color-text-dim)]">
+                <span className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-surface)] text-[var(--color-text-dim)]">
                   {result.matchedPhase} phase
                 </span>
               )}
               {result.matchedSpeed && (
-                <span className="text-xs px-2.5 py-1 rounded-md bg-[var(--color-bg)] text-[var(--color-text-dim)]">
+                <span className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-surface)] text-[var(--color-text-dim)]">
                   {result.matchedSpeed} speed
                 </span>
               )}
             </div>
 
             {result.physicsNote && (
-              <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 mb-3">
-                <p className="text-xs text-blue-400">{'\u{1F9EA}'} {result.physicsNote}</p>
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-[var(--color-blue-dim)] border border-[var(--color-blue)]/20 mb-4">
+                <Car className="w-4 h-4 text-[var(--color-blue)] mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-[var(--color-blue)]">{result.physicsNote}</p>
               </div>
             )}
 
-            {/* Parameter changes */}
             {result.parameterChanges.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
                   Recommended Changes ({result.parameterChanges.length})
                 </p>
                 {result.parameterChanges.map((change, i) => (
                   <div
                     key={`${change.parameterKey}-${i}`}
-                    className="rounded-lg border border-[var(--color-card-border)] p-3"
+                    className="rounded-xl border border-[var(--color-card-border)] p-4 hover:bg-[var(--color-surface)]/30 transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-[10px] text-[var(--color-text-muted)] bg-[var(--color-bg)] rounded px-1.5 py-0.5">
+                        <span className="font-mono text-[10px] text-[var(--color-text-muted)] bg-[var(--color-bg-subtle)] rounded-md px-2 py-0.5">
                           #{i + 1}
                         </span>
                         <span className="text-sm font-semibold text-[var(--color-text)]">{change.displayName}</span>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                          style={{
-                            color: confidenceColor(change.confidence),
-                            backgroundColor: `color-mix(in srgb, ${confidenceColor(change.confidence)} 15%, transparent)`,
-                          }}
-                        >
-                          {change.confidence}
-                        </span>
-                      </div>
+                      <span
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{
+                          color: confidenceColor(change.confidence),
+                          backgroundColor: `color-mix(in srgb, ${confidenceColor(change.confidence)} 12%, transparent)`,
+                        }}
+                      >
+                        {change.confidence}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs mb-1.5">
+                    <div className="flex items-center gap-3 text-xs mb-2">
                       <span className="text-[var(--color-accent)] font-semibold">{change.direction}</span>
                       <span className="text-[var(--color-text-dim)]">{change.magnitude}</span>
                     </div>
-                    <p className="text-xs text-[var(--color-text-muted)] mb-1">{change.tradeoff}</p>
+                    <p className="text-xs text-[var(--color-text-muted)] mb-1.5">{change.tradeoff}</p>
                     <p className="text-[10px] text-[var(--color-text-muted)]">
                       Verify: <span className="text-[var(--color-text-dim)]">{change.verifyChannel}</span>
                     </p>
                     {change.telemetryEvidence && (
-                      <div className="mt-1.5 p-1.5 rounded bg-[var(--color-green)]/10 border border-[var(--color-green)]/20">
-                        <p className="text-[10px] text-[var(--color-green)]">{'\u{1F4CA}'} {change.telemetryEvidence}</p>
+                      <div className="mt-2 p-2.5 rounded-lg bg-[var(--color-green-dim)] border border-[var(--color-green)]/15">
+                        <p className="text-[10px] text-[var(--color-green)] flex items-center gap-1.5">
+                          <Target className="w-3 h-3" />
+                          {change.telemetryEvidence}
+                        </p>
                       </div>
                     )}
                   </div>
@@ -287,21 +293,20 @@ export function DiagnosePanel() {
             )}
           </Card>
 
-          {/* Track & Car notes */}
           {(result.trackNotes.length > 0 || result.carNotes.length > 0) && (
-            <Card title="Context Notes" icon={'\u{1F4DD}'}>
+            <Card title="Context Notes" icon={<FileText className="w-4 h-4" />}>
               {result.trackNotes.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Track Guidance</p>
-                  <ul className="text-xs text-[var(--color-text-dim)] space-y-0.5 list-disc pl-4">
+                <div className="mb-4">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Track Guidance</p>
+                  <ul className="text-xs text-[var(--color-text-dim)] space-y-1 list-disc pl-4">
                     {result.trackNotes.map((n, i) => <li key={i}>{n}</li>)}
                   </ul>
                 </div>
               )}
               {result.carNotes.length > 0 && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Car Knowledge</p>
-                  <ul className="text-xs text-[var(--color-text-dim)] space-y-0.5 list-disc pl-4">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Car Knowledge</p>
+                  <ul className="text-xs text-[var(--color-text-dim)] space-y-1 list-disc pl-4">
                     {result.carNotes.map((n, i) => <li key={i}>{n}</li>)}
                   </ul>
                 </div>
@@ -309,13 +314,12 @@ export function DiagnosePanel() {
             </Card>
           )}
 
-          {/* Wet protocol */}
           {result.wetProtocol && (
-            <Card title="Wet Protocol" icon={'\u{1F327}\uFE0F'}>
-              <div className="space-y-2">
+            <Card title="Wet Protocol" icon={<Droplets className="w-4 h-4" />}>
+              <div className="space-y-3">
                 {result.wetProtocol.map((step, i) => (
-                  <div key={i} className="flex gap-3 items-start p-2.5 rounded-lg bg-[var(--color-bg)]">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px] font-bold">
+                  <div key={i} className="flex gap-3 items-start p-3 rounded-xl bg-[var(--color-bg-subtle)]">
+                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--color-blue-dim)] text-[var(--color-blue)] flex items-center justify-center text-[10px] font-bold">
                       {i + 1}
                     </span>
                     <div>

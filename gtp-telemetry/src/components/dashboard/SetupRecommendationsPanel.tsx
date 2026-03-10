@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Brain, ChevronDown, Wind, Ruler, CircleDot, Zap, Shield, OctagonX, Cog, MapPin } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { StatusBadge } from '../shared/StatusBadge';
 import type { RecommendationSeverity, SessionAnalysis, SetupRecommendation } from '../../lib/types';
@@ -7,15 +8,15 @@ interface Props {
   analysis: SessionAnalysis;
 }
 
-const CATEGORY_ICONS: Record<SetupRecommendation['category'], string> = {
-  AERO: '\u{1F4A8}',
-  PLATFORM: '\u{1F4D0}',
-  TYRES: '\u{1F6DE}',
-  DYNAMICS: '\u26A1',
-  AIDS: '\u{1F6E1}\uFE0F',
-  BRAKES: '\u{1F6D1}',
-  POWERTRAIN: '\u2699\uFE0F',
-  TRACK: '\u{1F3CE}\uFE0F',
+const CATEGORY_ICONS: Record<SetupRecommendation['category'], React.ReactNode> = {
+  AERO: <Wind className="w-3.5 h-3.5" />,
+  PLATFORM: <Ruler className="w-3.5 h-3.5" />,
+  TYRES: <CircleDot className="w-3.5 h-3.5" />,
+  DYNAMICS: <Zap className="w-3.5 h-3.5" />,
+  AIDS: <Shield className="w-3.5 h-3.5" />,
+  BRAKES: <OctagonX className="w-3.5 h-3.5" />,
+  POWERTRAIN: <Cog className="w-3.5 h-3.5" />,
+  TRACK: <MapPin className="w-3.5 h-3.5" />,
 };
 
 function severityBorderColor(severity: RecommendationSeverity): string {
@@ -73,17 +74,17 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
   };
 
   return (
-    <Card title="Setup Recommendations" icon={'\u{1F9E0}'}>
+    <Card title="Setup Recommendations" icon={<Brain className="w-4 h-4" />} accent>
       {/* Constraint violations banner */}
       {analysis.constraintViolations && analysis.constraintViolations.length > 0 && (
-        <div className="mb-4 p-3 rounded-lg bg-[var(--color-red)]/10 border border-[var(--color-red)]/30">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-2 h-2 rounded-full bg-[var(--color-red)]" />
+        <div className="mb-5 p-4 rounded-xl bg-[var(--color-red)]/8 border border-[var(--color-red)]/20">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="w-2 h-2 rounded-full bg-[var(--color-red)] animate-pulse-glow" />
             <span className="text-xs font-bold text-[var(--color-red)] uppercase tracking-wider">
               Sim Constraint Violations ({analysis.constraintViolations.length})
             </span>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {analysis.constraintViolations.map((v) => (
               <div key={v.constraintId} className="text-xs">
                 <span className="text-[var(--color-red)] font-semibold">{v.description}</span>
@@ -100,33 +101,33 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
       )}
 
       {/* Dataset confidence header */}
-      <div className="mb-4 p-3 rounded-lg bg-[var(--color-bg)]">
+      <div className="mb-5 p-4 rounded-xl bg-[var(--color-bg-subtle)]">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[var(--color-text-dim)] text-sm">Dataset confidence</span>
           <StatusBadge status={confidenceToStatus(dataQuality.confidence)} />
         </div>
         <p className="text-xs text-[var(--color-text-muted)]">
-          {dataQuality.validLapCount} valid laps • {dataQuality.optionalMissingChannels.length} optional channels missing
+          {dataQuality.validLapCount} valid laps &bull; {dataQuality.optionalMissingChannels.length} optional channels missing
         </p>
       </div>
 
       {/* Severity summary bar */}
       {recommendations.length > 0 && (
-        <div className="flex items-center gap-4 mb-4 px-3 py-2.5 rounded-lg bg-[var(--color-bg)]">
+        <div className="flex items-center gap-5 mb-5 px-4 py-3 rounded-xl bg-[var(--color-bg-subtle)]">
           {severityCounts.CRITICAL > 0 && (
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-red)]">
+            <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-red)]">
               <span className="w-2 h-2 rounded-full bg-[var(--color-red)]" />
               {severityCounts.CRITICAL} Critical
             </span>
           )}
           {severityCounts.WARNING > 0 && (
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-accent)]">
+            <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-accent)]">
               <span className="w-2 h-2 rounded-full bg-[var(--color-accent)]" />
               {severityCounts.WARNING} Warning
             </span>
           )}
           {severityCounts.INFO > 0 && (
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-green)]">
+            <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-green)]">
               <span className="w-2 h-2 rounded-full bg-[var(--color-green)]" />
               {severityCounts.INFO} Info
             </span>
@@ -142,50 +143,40 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
           No actionable setup recommendations generated for this dataset.
         </p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {grouped.map((group) => (
             <div key={group.category}>
-              {/* Collapsible category header */}
               <button
                 onClick={() => toggle(group.category)}
-                className="w-full flex items-center justify-between mb-2 cursor-pointer bg-transparent border-none p-0 text-left"
+                className="w-full flex items-center justify-between mb-3 cursor-pointer bg-transparent border-none p-0 text-left"
               >
-                <span className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
-                  <span>{CATEGORY_ICONS[group.category]}</span>
+                <span className="flex items-center gap-2 text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
+                  <span className="text-[var(--color-accent)]">{CATEGORY_ICONS[group.category]}</span>
                   {group.category}
-                  <span className="bg-[var(--color-bg)] rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-text-dim)] ml-1">
+                  <span className="bg-[var(--color-bg-subtle)] rounded-full px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-dim)] ml-1">
                     {group.items.length}
                   </span>
                 </span>
-                <svg
+                <ChevronDown
                   className={`w-4 h-4 text-[var(--color-text-muted)] transition-transform duration-200 ${collapsed.has(group.category) ? '-rotate-90' : ''}`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
+                />
               </button>
 
-              {/* Recommendation cards */}
               {!collapsed.has(group.category) && (
                 <div className="space-y-3">
                   {group.items.map((item) => (
                     <div
                       key={item.id}
-                      className="rounded-lg border border-[var(--color-card-border)] border-l-4 p-3 flex gap-3"
+                      className="rounded-xl border border-[var(--color-card-border)] border-l-4 p-4 flex gap-3 hover:bg-[var(--color-surface)]/30 transition-colors"
                       style={{ borderLeftColor: severityBorderColor(item.severity) }}
                     >
-                      {/* Priority badge */}
-                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-bg)] flex items-center justify-center">
+                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-bg-subtle)] flex items-center justify-center">
                         <span className="font-mono text-xs font-bold text-[var(--color-text-dim)]">
                           {item.priority}
                         </span>
                       </div>
-                      {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
                           <p className="text-sm font-semibold text-[var(--color-text)]">{item.title}</p>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             <StatusBadge status={severityToStatus(item.severity)} />
@@ -193,29 +184,29 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                             {item.exactness && <StatusBadge status={exactnessToStatus(item.exactness)} />}
                           </div>
                         </div>
-                        <p className="text-sm text-[var(--color-text)] font-medium mb-1.5">{item.action}</p>
-                        <p className="text-xs text-[var(--color-text-muted)] mb-2">{item.rationale}</p>
+                        <p className="text-sm text-[var(--color-text)] font-medium mb-2">{item.action}</p>
+                        <p className="text-xs text-[var(--color-text-muted)] mb-2.5">{item.rationale}</p>
                         {item.exactness && (
-                          <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                          <p className="text-[11px] text-[var(--color-text-muted)] mb-2.5">
                             {item.exactness === 'exact' && 'Exact change mapped from parsed setup.'}
                             {item.exactness === 'inferred' && 'Directionally inferred from telemetry because the garage parameter could not be mapped exactly.'}
                             {item.exactness === 'blocked' && 'Constrained by missing setup data or a sim limit; see notes below.'}
                           </p>
                         )}
                         {item.evidence.length > 0 && (
-                          <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-0.5">
+                          <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
                             {item.evidence.slice(0, 3).map((ev) => (
                               <li key={ev}>{ev}</li>
                             ))}
                           </ul>
                         )}
                         {item.specifics && item.specifics.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-[var(--color-card-border)] space-y-1">
+                          <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50 space-y-1.5">
                             {item.specifics.map((s) => (
                               <div key={s.parameter} className="flex items-center gap-2 text-xs">
                                 <span className="text-[var(--color-text-muted)] min-w-0 truncate">{s.parameter}:</span>
                                 <span className="font-mono text-[var(--color-text-dim)]">{s.current}</span>
-                                <span className="text-[var(--color-accent)] font-bold">{'\u2192'}</span>
+                                <span className="text-[var(--color-accent)] font-bold">&rarr;</span>
                                 <span className="font-mono font-semibold text-[var(--color-text)]">{s.target}</span>
                                 <span className="text-[var(--color-text-muted)]">({s.delta})</span>
                               </div>
@@ -223,9 +214,9 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                           </div>
                         )}
                         {item.verify && item.verify.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-[var(--color-card-border)]">
-                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Verify After Change</p>
-                            <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-0.5">
+                          <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
+                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Verify After Change</p>
+                            <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
                               {item.verify.map((check) => (
                                 <li key={check}>{check}</li>
                               ))}
@@ -233,9 +224,9 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                           </div>
                         )}
                         {item.blockedBy && item.blockedBy.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-[var(--color-card-border)]">
-                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Limits</p>
-                            <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-0.5">
+                          <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
+                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Limits</p>
+                            <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
                               {item.blockedBy.map((note) => (
                                 <li key={note}>{note}</li>
                               ))}
