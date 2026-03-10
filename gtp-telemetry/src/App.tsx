@@ -54,9 +54,6 @@ const RARBAnalysis = lazy(() =>
 const SetupDump = lazy(() =>
   import('./components/dashboard/SetupDump').then((m) => ({ default: m.SetupDump }))
 );
-const SetupRecommendationsPanel = lazy(() =>
-  import('./components/dashboard/SetupRecommendationsPanel').then((m) => ({ default: m.SetupRecommendationsPanel }))
-);
 const AIRecommendationAssistant = lazy(() =>
   import('./components/dashboard/AIRecommendationAssistant').then((m) => ({ default: m.AIRecommendationAssistant }))
 );
@@ -97,7 +94,6 @@ function Dashboard() {
           >
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                <SetupRecommendationsPanel analysis={a} />
                 <AIRecommendationAssistant analysis={a} />
                 <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
                   <LapTimesChart analysis={a} />

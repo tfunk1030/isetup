@@ -362,7 +362,7 @@ export interface AIRecommendationItem {
   exactness: RecommendationExactness;
   verification: string[];
   assumptions: string[];
-  source: 'ai' | 'rule-engine';
+  source: 'ai';
   currentSourcePath?: string;
   mappingConfidence?: ConfidenceLevel;
   mappingQuality?: SetupMappingQuality;
@@ -376,7 +376,7 @@ export interface AISetupBrief {
   confidenceNote: string;
   reasoning: string[];
   disagreements: string[];
-  source: 'consensus' | 'single-model' | 'rule-engine';
+  source: 'consensus' | 'single-model';
   modelsUsed: string[];
 }
 

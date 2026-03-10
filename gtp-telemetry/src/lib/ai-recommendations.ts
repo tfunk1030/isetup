@@ -77,10 +77,6 @@ function findMappedParameter(analysis: SessionAnalysis, parameterKey?: string) {
   return analysis.normalizedSetup.parameters.find((parameter) => parameter.parameterKey === parameterKey);
 }
 
-function findSourcePath(analysis: SessionAnalysis, parameterKey?: string): string | undefined {
-  return findMappedParameter(analysis, parameterKey)?.sourcePath;
-}
-
 function validateRecommendation(
   analysis: SessionAnalysis,
   recommendation: AIRecommendationItem
@@ -140,88 +136,7 @@ function validateRecommendation(
   };
 }
 
-function fallbackRecommendation(analysis: SessionAnalysis, index: number): AIRecommendationItem {
-  const recommendation = analysis.recommendations[index];
-  const primarySpecific = recommendation.specifics?.[0];
-  const mappedParameter = findMappedParameter(analysis, recommendation.parameterKey);
-  return {
-    parameterKey: recommendation.parameterKey || recommendation.id,
-    displayName: primarySpecific?.parameter || recommendation.title,
-    currentValue: primarySpecific?.current || 'Telemetry-derived',
-    targetValue: primarySpecific?.target || 'Review',
-    delta: primarySpecific?.delta || 'Inferred from telemetry',
-    reason: recommendation.rationale,
-    evidence: recommendation.evidence.slice(0, 3),
-    confidence: recommendation.confidence,
-    exactness: recommendation.exactness || 'inferred',
-    verification: recommendation.verify || ['Validate the change over a fresh 2-3 lap run.'],
-    assumptions: recommendation.blockedBy || [],
-    source: 'rule-engine',
-    currentSourcePath: findSourcePath(analysis, recommendation.parameterKey),
-    mappingConfidence: mappedParameter?.confidence,
-    mappingQuality: mappedParameter?.mappingQuality,
-    mappingAmbiguities: mappedParameter?.ambiguousMatches || [],
-  };
-}
-
-function buildFallbackBrief(analysis: SessionAnalysis): AISetupBrief {
-  const top = analysis.recommendations.slice(0, 3);
-  const watchItems = [
-    ...analysis.dataQuality.notes,
-    ...analysis.normalizedSetup.mappingWarnings.slice(0, 3),
-    ...top.flatMap((r) => r.evidence).slice(0, 3),
-  ];
-  const mappingSummary = analysis.normalizedSetup.mappingStats;
-  const mappingSummaryNote = `Setup mapping: ${mappingSummary.exact} exact, ${mappingSummary.ordered} ordered, ${mappingSummary.ambiguous} ambiguous.`;
-
-  return {
-    summary: top.length > 0
-      ? `Rule engine identified ${analysis.recommendations.length} actionable items. Prioritize critical/warning items first.`
-      : 'No urgent setup risks detected from current telemetry. Validate across a longer run.',
-    recommendations: top.length > 0
-      ? top.map((_, index) => fallbackRecommendation(analysis, index))
-      : [{
-          parameterKey: 'baseline.hold',
-          displayName: 'Current setup baseline',
-          currentValue: 'Current setup',
-          targetValue: 'Hold',
-          delta: 'No urgent change',
-          reason: 'No urgent setup risks detected from current telemetry.',
-          evidence: ['Rule-engine fallback found no critical items.'],
-          confidence: analysis.dataQuality.confidence,
-          exactness: 'inferred',
-          verification: ['Collect a longer stint before making setup changes.'],
-          assumptions: [],
-          source: 'rule-engine',
-        }],
-    watchItems: watchItems.length > 0
-      ? watchItems
-      : ['No major quality issues detected.'],
-    confidenceNote: `Dataset confidence is ${analysis.dataQuality.confidence}. ${mappingSummaryNote}`,
-    reasoning: top.map((r) => r.rationale).slice(0, 4),
-    disagreements: [],
-    source: 'rule-engine',
-    modelsUsed: [],
-  };
-}
-
 function buildPrompt(analysis: SessionAnalysis): string {
-  const topRecs = analysis.recommendations.slice(0, 10).map((r) => ({
-    id: r.id,
-    category: r.category,
-    severity: r.severity,
-    priority: r.priority,
-    title: r.title,
-    action: r.action,
-    rationale: r.rationale,
-    evidence: r.evidence.slice(0, 3),
-    specifics: r.specifics || [],
-    parameterKey: r.parameterKey ?? null,
-    exactness: r.exactness ?? 'inferred',
-    verify: r.verify || [],
-    blockedBy: r.blockedBy || [],
-  }));
-
   const lastPressures = analysis.tyrePressureData[analysis.tyrePressureData.length - 1];
   const lastTemps = analysis.tyreTempData[analysis.tyreTempData.length - 1];
 
@@ -259,7 +174,6 @@ function buildPrompt(analysis: SessionAnalysis): string {
       mappingWarnings: analysis.normalizedSetup.mappingWarnings,
     },
     telemetryReasoning: analysis.telemetryReasoning,
-    topRecommendations: topRecs,
     keyMetrics: {
       cleanBottoming: analysis.bottoming.clean,
       kerbBottoming: analysis.bottoming.kerb,
@@ -331,12 +245,12 @@ export function hasAIRecommendationConfig(): boolean {
   return Boolean(getEnv('VITE_GEMINI_API_KEY') || getEnv('VITE_ANTHROPIC_API_KEY'));
 }
 
-export function getAIRecommendationMode(): 'local' | 'single-model' | 'dual-model' {
+export function getAIRecommendationMode(): 'unconfigured' | 'single-model' | 'dual-model' {
   const hasGemini = Boolean(getEnv('VITE_GEMINI_API_KEY'));
   const hasAnthropic = Boolean(getEnv('VITE_ANTHROPIC_API_KEY'));
   if (hasGemini && hasAnthropic) return 'dual-model';
   if (hasGemini || hasAnthropic) return 'single-model';
-  return 'local';
+  return 'unconfigured';
 }
 
 function normalizeText(value: string): string {
@@ -528,19 +442,47 @@ function mergeRecommendations(results: ModelResult[]): { recommendations: AIReco
   };
 }
 
+function stringifyError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim().length > 0) return error.trim();
+  return 'Unknown provider error.';
+}
+
+function buildNoResultError(settled: PromiseSettledResult<ModelResult | null>[]): Error {
+  const providers = ['Gemini', 'Opus'];
+  const failureMessages = settled
+    .map((result, index) => {
+      if (result.status !== 'rejected') return null;
+      return `${providers[index]}: ${stringifyError(result.reason)}`;
+    })
+    .filter((message): message is string => Boolean(message));
+
+  if (failureMessages.length === 0) {
+    return new Error('Configured AI provider did not return a recommendation payload.');
+  }
+
+  return new Error(`AI analysis failed for all configured providers: ${failureMessages.join(' | ')}`);
+}
+
 function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis): AISetupBrief {
   const mappingSummary = analysis.normalizedSetup.mappingStats;
   const mappingSummaryNote = `Mapping quality: ${mappingSummary.exact} exact, ${mappingSummary.ordered} ordered, ${mappingSummary.ambiguous} ambiguous.`;
-  if (results.length === 0) return buildFallbackBrief(analysis);
+  if (results.length === 0) {
+    throw new Error('No successful AI model responses were received.');
+  }
+
+  const baseWatchItems = dedupeStrings(
+    [...analysis.dataQuality.notes.slice(0, 3), ...analysis.normalizedSetup.mappingWarnings.slice(0, 3)],
+    5,
+  );
+
   if (results.length === 1) {
     const single = results[0];
     return {
       summary: single.brief.summary,
-      recommendations: single.brief.recommendations.length > 0
-        ? single.brief.recommendations
-        : buildFallbackBrief(analysis).recommendations,
+      recommendations: single.brief.recommendations,
       watchItems: dedupeStrings(
-        [...single.brief.watchItems, ...analysis.normalizedSetup.mappingWarnings.slice(0, 2)],
+        [...single.brief.watchItems, ...baseWatchItems],
         5,
       ),
       confidenceNote: `${single.brief.confidenceNote} Dataset confidence: ${analysis.dataQuality.confidence}. ${mappingSummaryNote}`,
@@ -576,12 +518,10 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
       first.brief.summary,
       second.brief.summary,
     ].join(' '),
-    recommendations: mergedRecommendations.recommendations.length > 0
-      ? mergedRecommendations.recommendations
-      : buildFallbackBrief(analysis).recommendations,
+    recommendations: mergedRecommendations.recommendations,
     watchItems: mergedWatch.length > 0
-      ? dedupeStrings([...mergedWatch, ...analysis.normalizedSetup.mappingWarnings.slice(0, 2)], 5)
-      : dedupeStrings([...analysis.dataQuality.notes.slice(0, 4), ...analysis.normalizedSetup.mappingWarnings.slice(0, 2)], 5),
+      ? dedupeStrings([...mergedWatch, ...baseWatchItems], 5)
+      : baseWatchItems,
     confidenceNote: `Dual-model synthesis complete. ${analysis.dataQuality.confidence} telemetry confidence. ${mappingSummaryNote} Resolve disagreements before final setup lock.`,
     reasoning: mergedReasoning,
     disagreements: disagreementDetails,
@@ -593,18 +533,18 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
 export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<AISetupBrief> {
   const prompt = buildPrompt(analysis);
   if (!hasAIRecommendationConfig()) {
-    return buildFallbackBrief(analysis);
+    throw new Error('AI analysis is not configured. Set VITE_GEMINI_API_KEY and/or VITE_ANTHROPIC_API_KEY.');
   }
 
-  try {
-    const settled = await Promise.allSettled([queryGemini(prompt, analysis), queryOpus(prompt, analysis)]);
-    const successful: ModelResult[] = settled
-      .filter((r): r is PromiseFulfilledResult<ModelResult | null> => r.status === 'fulfilled')
-      .map((r) => r.value)
-      .filter((v): v is ModelResult => v != null);
+  const settled = await Promise.allSettled([queryGemini(prompt, analysis), queryOpus(prompt, analysis)]);
+  const successful: ModelResult[] = settled
+    .filter((r): r is PromiseFulfilledResult<ModelResult | null> => r.status === 'fulfilled')
+    .map((r) => r.value)
+    .filter((v): v is ModelResult => v != null);
 
-    return buildConsensusBrief(successful, analysis);
-  } catch {
-    return buildFallbackBrief(analysis);
+  if (successful.length === 0) {
+    throw buildNoResultError(settled);
   }
+
+  return buildConsensusBrief(successful, analysis);
 }

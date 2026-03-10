@@ -54,6 +54,7 @@ import {
 } from './domain-knowledge';
 
 type Channels = Record<string, Float64Array | null>;
+const ENABLE_RULE_ENGINE_RECOMMENDATIONS = false;
 
 function loadChannels(parsed: IBTParsed): Channels {
   const ch: Channels = {};
@@ -2001,26 +2002,27 @@ export function analyzeSession(
     rideHeightData,
     dataQuality,
   });
-  const recommendations = buildRecommendations({
-    carProfile,
-    trackProfile,
-    normalizedSetup,
-    telemetryReasoning,
-    tyreTempData,
-    tyrePressureData,
-    tyreWearData,
-    engineTemps,
-    bottoming,
-    shockVelStats,
-    aids,
-    splitter,
-    rarb,
-    rideHeightData,
-    dataQuality,
-    validLapCount: validLaps.length,
-    conditioning,
-  });
-
+  const recommendations = ENABLE_RULE_ENGINE_RECOMMENDATIONS
+    ? buildRecommendations({
+        carProfile,
+        trackProfile,
+        normalizedSetup,
+        telemetryReasoning,
+        tyreTempData,
+        tyrePressureData,
+        tyreWearData,
+        engineTemps,
+        bottoming,
+        shockVelStats,
+        aids,
+        splitter,
+        rarb,
+        rideHeightData,
+        dataQuality,
+        validLapCount: validLaps.length,
+        conditioning,
+      })
+    : [];
   // Domain knowledge enrichment
   const constraintViolations = validateConstraints(normalizedSetup, carProfile);
   const physicsVersionNote = getPhysicsVersionNote();
