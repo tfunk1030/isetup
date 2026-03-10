@@ -1,155 +1,231 @@
 import jsPDF from 'jspdf';
-import type { SessionAnalysis } from './types';
-import { SHOCK_VELOCITY } from './constants';
+import type { SessionAnalysis, SetupParameterGroup, SetupRecommendation } from './types';
+
+const PAGE_HEIGHT_MM = 297;
+const PAGE_WIDTH_MM = 210;
+const MARGIN_MM = 16;
+const CONTENT_WIDTH_MM = PAGE_WIDTH_MM - MARGIN_MM * 2;
+
+const GROUP_LABELS: Record<SetupParameterGroup, string> = {
+  aero: 'Aero',
+  platform: 'Platform',
+  suspension: 'Suspension',
+  dampers: 'Dampers',
+  alignment: 'Alignment',
+  brakes: 'Brakes',
+  diff: 'Differential',
+  tyres: 'Tyres',
+  electronics: 'Electronics',
+};
+
+function formatLapTime(seconds: number): string {
+  if (!Number.isFinite(seconds)) return '--';
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${(seconds % 60).toFixed(2).padStart(5, '0')}`;
+}
 
 export async function exportPDF(analysis: SessionAnalysis): Promise<void> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 15;
-  let y = 20;
+  let y = 18;
 
-  const addHeader = (text: string) => {
-    if (y > 260) { doc.addPage(); y = 20; }
+  const ensureSpace = (spaceNeeded = 8) => {
+    if (y + spaceNeeded <= PAGE_HEIGHT_MM - MARGIN_MM) return;
+    doc.addPage();
+    paintBackground();
+    y = 18;
+  };
+
+  const paintBackground = () => {
+    doc.setFillColor(6, 10, 18);
+    doc.rect(0, 0, PAGE_WIDTH_MM, PAGE_HEIGHT_MM, 'F');
+  };
+
+  const sectionTitle = (title: string, kicker?: string) => {
+    ensureSpace(12);
+    if (kicker) {
+      doc.setFontSize(8);
+      doc.setTextColor(127, 140, 166);
+      doc.text(kicker.toUpperCase(), MARGIN_MM, y);
+      y += 4;
+    }
     doc.setFontSize(14);
-    doc.setTextColor(245, 158, 11); // accent
-    doc.text(text, margin, y);
-    y += 8;
-    doc.setTextColor(226, 232, 240); // text
+    doc.setTextColor(244, 179, 71);
+    doc.text(title, MARGIN_MM, y);
+    y += 7;
+  };
+
+  const keyValue = (label: string, value: string) => {
+    ensureSpace(6);
+    doc.setFontSize(9);
+    doc.setTextColor(127, 140, 166);
+    doc.text(label, MARGIN_MM, y);
+    doc.setTextColor(236, 242, 255);
+    doc.text(value, PAGE_WIDTH_MM - MARGIN_MM, y, { align: 'right' });
+    y += 5.5;
+  };
+
+  const paragraph = (text: string, color: [number, number, number] = [186, 199, 222]) => {
+    const lines = doc.splitTextToSize(text, CONTENT_WIDTH_MM);
+    ensureSpace(lines.length * 4 + 2);
+    doc.setFontSize(9);
+    doc.setTextColor(...color);
+    doc.text(lines, MARGIN_MM, y);
+    y += lines.length * 4 + 1.5;
+  };
+
+  const bulletList = (items: string[], limit = items.length) => {
+    for (const item of items.slice(0, limit)) {
+      const lines = doc.splitTextToSize(item, CONTENT_WIDTH_MM - 6);
+      ensureSpace(lines.length * 4 + 1.5);
+      doc.setFontSize(9);
+      doc.setTextColor(186, 199, 222);
+      doc.text('•', MARGIN_MM, y);
+      doc.text(lines, MARGIN_MM + 4, y);
+      y += lines.length * 4 + 1.5;
+    }
+  };
+
+  const divider = () => {
+    y += 1.5;
+    ensureSpace(4);
+    doc.setDrawColor(24, 36, 58);
+    doc.line(MARGIN_MM, y, PAGE_WIDTH_MM - MARGIN_MM, y);
+    y += 4;
+  };
+
+  const addRecommendation = (item: SetupRecommendation) => {
+    ensureSpace(16);
+    doc.setFillColor(10, 17, 29);
+    doc.roundedRect(MARGIN_MM, y, CONTENT_WIDTH_MM, 18, 4, 4, 'F');
+    doc.setDrawColor(137, 156, 190);
+    doc.roundedRect(MARGIN_MM, y, CONTENT_WIDTH_MM, 18, 4, 4, 'S');
+
     doc.setFontSize(10);
+    doc.setTextColor(236, 242, 255);
+    doc.text(item.title, MARGIN_MM + 4, y + 5.5);
+
+    doc.setFontSize(8);
+    doc.setTextColor(127, 140, 166);
+    doc.text(`${item.category} • ${item.severity} • ${item.confidence}`, PAGE_WIDTH_MM - MARGIN_MM - 4, y + 5.5, { align: 'right' });
+
+    const actionSummary = item.specifics && item.specifics.length > 0
+      ? item.specifics
+        .slice(0, 2)
+        .map((specific) => `${specific.parameter}: ${specific.current} -> ${specific.target} (${specific.delta})`)
+        .join(' | ')
+      : item.action;
+    const actionLines = doc.splitTextToSize(actionSummary, CONTENT_WIDTH_MM - 8);
+    doc.setTextColor(244, 179, 71);
+    doc.text(actionLines, MARGIN_MM + 4, y + 10.5);
+    y += 11 + Math.max(0, actionLines.length - 1) * 4;
+
+    const rationaleLines = doc.splitTextToSize(item.rationale, CONTENT_WIDTH_MM - 8);
+    doc.setTextColor(186, 199, 222);
+    doc.text(rationaleLines, MARGIN_MM + 4, y + 2.5);
+    y += rationaleLines.length * 4 + 4.5;
   };
 
-  const addRow = (label: string, value: string) => {
-    if (y > 275) { doc.addPage(); y = 20; }
-    doc.setTextColor(148, 163, 184); // textDim
-    doc.text(label, margin, y);
-    doc.setTextColor(226, 232, 240);
-    doc.text(value, pageWidth - margin, y, { align: 'right' });
-    y += 5;
-  };
+  paintBackground();
 
-  const addSeparator = () => {
-    y += 3;
-    doc.setDrawColor(30, 41, 59);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 5;
-  };
+  doc.setFontSize(9);
+  doc.setTextColor(127, 140, 166);
+  doc.text('iRacing Setup Optimizer', MARGIN_MM, y);
+  y += 5;
 
-  // Background
-  doc.setFillColor(10, 14, 23);
-  doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), 'F');
-
-  // Title
   doc.setFontSize(20);
-  doc.setTextColor(226, 232, 240);
-  doc.text('GTP Telemetry Report', margin, y);
-  y += 10;
+  doc.setTextColor(236, 242, 255);
+  doc.text('Command-Center Report', MARGIN_MM, y);
+  y += 8;
 
-  // Session header
-  addHeader('Session Info');
-  addRow('Car', analysis.header.car);
-  addRow('Track', analysis.header.track);
-  addRow('Driver', analysis.header.driver);
-  addRow('Air Temp', analysis.header.airTemp);
-  addRow('Track Temp', analysis.header.trackTemp);
-  addRow('Duration', analysis.header.duration);
-  addRow('Brake Migration', analysis.header.hasBrakeMig ? 'YES' : 'NO');
-  addRow('Data Confidence', analysis.dataQuality.confidence);
-  addSeparator();
+  doc.setFontSize(10);
+  doc.setTextColor(186, 199, 222);
+  doc.text(`${analysis.header.car} • ${analysis.header.track}`, MARGIN_MM, y);
+  y += 8;
 
+  sectionTitle('Session Summary', 'overview');
+  keyValue('Driver', analysis.header.driver);
+  keyValue('Best Lap', formatLapTime(analysis.bestTime));
+  keyValue('Valid Laps', String(analysis.validLaps.length));
+  keyValue('Data Confidence', analysis.dataQuality.confidence);
+  keyValue('Air / Track Temp', `${analysis.header.airTemp} / ${analysis.header.trackTemp}`);
+  keyValue('Duration', analysis.header.duration);
+  divider();
+
+  sectionTitle('Optimizer Queue', 'exact changes first');
+  const exactRecommendations = analysis.recommendations.filter(
+    (item) => item.id !== 'all-clear' && (item.exactness === 'exact' || (item.specifics?.length ?? 0) > 0),
+  );
+  const exportRecommendations = (exactRecommendations.length > 0
+    ? exactRecommendations
+    : analysis.recommendations.filter((item) => item.id !== 'all-clear')).slice(0, 6);
+
+  if (exportRecommendations.length === 0) {
+    paragraph('No actionable setup recommendations were generated for this dataset.');
+  } else {
+    for (const recommendation of exportRecommendations) {
+      addRecommendation(recommendation);
+    }
+  }
+  divider();
+
+  sectionTitle('Current Setup Snapshot', 'decoded garage data');
+  const groupedParameters = new Map<SetupParameterGroup, typeof analysis.normalizedSetup.parameters>();
+  for (const parameter of analysis.normalizedSetup.parameters) {
+    const existing = groupedParameters.get(parameter.group) ?? [];
+    existing.push(parameter);
+    groupedParameters.set(parameter.group, existing);
+  }
+
+  for (const [group, parameters] of groupedParameters.entries()) {
+    ensureSpace(8);
+    doc.setFontSize(10);
+    doc.setTextColor(236, 242, 255);
+    doc.text(GROUP_LABELS[group], MARGIN_MM, y);
+    y += 4.5;
+    for (const parameter of parameters.slice(0, 6)) {
+      keyValue(parameter.displayName, parameter.unit ? `${parameter.displayValue} ${parameter.unit}` : parameter.displayValue);
+    }
+    if (parameters.length > 6) {
+      paragraph(`+${parameters.length - 6} more ${GROUP_LABELS[group].toLowerCase()} parameters in the app.`, [127, 140, 166]);
+    }
+    y += 1.5;
+  }
+  divider();
+
+  sectionTitle('Confidence and Constraints', 'quality checks');
+  paragraph(
+    `Mapping quality: ${analysis.normalizedSetup.mappingStats.exact} exact, ${analysis.normalizedSetup.mappingStats.ordered} ordered, ${analysis.normalizedSetup.mappingStats.ambiguous} ambiguous.`,
+  );
   if (analysis.dataQuality.notes.length > 0) {
-    addHeader('Data Quality Notes');
-    for (const note of analysis.dataQuality.notes.slice(0, 4)) {
-      addRow('-', note);
-    }
-    addSeparator();
+    bulletList(analysis.dataQuality.notes, 4);
+  }
+  if (analysis.constraintViolations.length > 0) {
+    paragraph('Constraint violations');
+    bulletList(analysis.constraintViolations.map((item) => `${item.description}. ${item.workaround}`), 4);
+  }
+  if (analysis.physicsVersionNote) {
+    paragraph(`Physics note: ${analysis.physicsVersionNote}`);
+  }
+  divider();
+
+  sectionTitle('Evidence Appendix', 'compact support');
+  const evidenceNotes = analysis.telemetryReasoning
+    .filter((signal) => signal.direction !== 'stable')
+    .slice(0, 5)
+    .map((signal) => `${signal.summary} (${signal.phase}, ${signal.confidence})`);
+  if (evidenceNotes.length > 0) {
+    paragraph('Telemetry watch items');
+    bulletList(evidenceNotes, 5);
+  }
+  if (analysis.trackGuidance) {
+    paragraph('Track guidance');
+    bulletList(analysis.trackGuidance.specialNotes, 4);
+  }
+  if (analysis.carDeepKnowledge) {
+    paragraph('Car knowledge');
+    bulletList(analysis.carDeepKnowledge.weaknesses, 4);
   }
 
-  // Lap Times
-  addHeader('Lap Times');
-  const bestLap = analysis.lapTimes.find((l) => Math.abs(l.time - analysis.bestTime) < 0.01);
-  addRow('Best Lap', bestLap?.timeStr || 'N/A');
-  addRow('Spread', `${(Math.max(...analysis.lapTimes.map((l) => l.time)) - analysis.bestTime).toFixed(2)}s`);
-  addRow('Valid Laps', String(analysis.validLaps.length));
-  for (const lap of analysis.lapTimes) {
-    addRow(`  Lap ${lap.lap}`, `${lap.timeStr}  (${lap.maxSpeed.toFixed(0)} km/h max)`);
-  }
-  addSeparator();
-
-  // Tyre Temps
-  if (analysis.tyreTempData.length > 0) {
-    addHeader('Tyre Temperatures (Last Lap)');
-    const last = analysis.tyreTempData[analysis.tyreTempData.length - 1];
-    for (const corner of ['LF', 'RF', 'LR', 'RR'] as const) {
-      const d = last[corner];
-      const avg = ((d.O + d.M + d.I) / 3).toFixed(1);
-      addRow(`${corner}`, `O:${d.O.toFixed(1)} M:${d.M.toFixed(1)} I:${d.I.toFixed(1)}  avg:${avg}\u00B0C`);
-    }
-    addSeparator();
-  }
-
-  // Pressures
-  if (analysis.tyrePressureData.length > 0) {
-    addHeader('Tyre Pressures (Last Lap, PSI)');
-    const last = analysis.tyrePressureData[analysis.tyrePressureData.length - 1];
-    addRow('LF', `${last.LF.toFixed(1)} PSI`);
-    addRow('RF', `${last.RF.toFixed(1)} PSI`);
-    addRow('LR', `${last.LR.toFixed(1)} PSI`);
-    addRow('RR', `${last.RR.toFixed(1)} PSI`);
-    addSeparator();
-  }
-
-  // Platform
-  addHeader('Aero Platform');
-  addRow('Clean-Track Bottoming', String(analysis.bottoming.clean));
-  addRow('Kerb Bottoming', String(analysis.bottoming.kerb));
-  for (const [corner, d] of Object.entries(analysis.shockVelStats)) {
-    const status = d.peak > SHOCK_VELOCITY.EXTREME ? ' [EXTREME]' : d.peak > SHOCK_VELOCITY.HIGH ? ' [HIGH]' : '';
-    addRow(`${corner} Shock Peak`, `${d.peak.toFixed(0)} mm/s${status}`);
-  }
-  addSeparator();
-
-  // G-Force
-  addHeader('G-Force Envelope');
-  addRow('Peak Lateral', `${analysis.peakLatG.toFixed(2)} g`);
-  addRow('Peak Braking', `${analysis.peakBrakeG.toFixed(2)} g`);
-  addRow('Peak Accel', `${analysis.peakAccelG.toFixed(2)} g`);
-  addSeparator();
-
-  // Fuel
-  addHeader('Fuel');
-  addRow('Start', `${analysis.fuel.start.toFixed(1)} L`);
-  addRow('End', `${analysis.fuel.end.toFixed(1)} L`);
-  addRow('Per Lap', `${analysis.fuel.perLap.toFixed(2)} L`);
-  addRow('Range', `~${Math.floor(analysis.fuel.range)} laps`);
-  addSeparator();
-
-  // Driver Aids
-  addHeader('Driver Aids');
-  for (const [name, d] of Object.entries(analysis.aids)) {
-    const status = d.constant ? '' : ' [CHANGING]';
-    addRow(name, `avg:${d.avg.toFixed(1)} range:${d.min.toFixed(1)}-${d.max.toFixed(1)}${status}`);
-  }
-  addSeparator();
-
-  // Conditioning
-  if (analysis.conditioning) {
-    addHeader('Tyre Conditioning');
-    for (const [corner, d] of Object.entries(analysis.conditioning)) {
-      const lapsStr = d.lapsTo85 < 50 ? ` (${d.lapsTo85} laps to 85\u00B0C)` : '';
-      addRow(corner, `${d.rate > 0 ? '+' : ''}${d.rate.toFixed(1)}\u00B0C/lap${lapsStr}`);
-    }
-    addSeparator();
-  }
-
-  // Engine Temps
-  if (analysis.engineTemps.length > 0) {
-    addHeader('Engine Temperatures');
-    const last = analysis.engineTemps[analysis.engineTemps.length - 1];
-    addRow('Water (last lap)', `${last.waterTemp.toFixed(1)}\u00B0C`);
-    addRow('Oil (last lap)', `${last.oilTemp.toFixed(1)}\u00B0C`);
-  }
-
-  // Save
-  const filename = `GTP_Report_${analysis.header.car.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  const filename = `GTP_Optimizer_${analysis.header.car.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(filename);
 }

@@ -54,7 +54,7 @@ import {
 } from './domain-knowledge';
 
 type Channels = Record<string, Float64Array | null>;
-const ENABLE_RULE_ENGINE_RECOMMENDATIONS = false;
+const ENABLE_RULE_ENGINE_RECOMMENDATIONS = true;
 
 function loadChannels(parsed: IBTParsed): Channels {
   const ch: Channels = {};

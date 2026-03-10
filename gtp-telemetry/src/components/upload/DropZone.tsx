@@ -1,6 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
-import { Upload, Flag, ChevronRight } from 'lucide-react';
+import { ChevronRight, Flag, Upload } from 'lucide-react';
 import { useSessionStore } from '../../store/session-store';
+
+const SUPPORTED_CARS = [
+  'BMW M Hybrid V8',
+  'Porsche 963',
+  'Cadillac V-Series.R',
+  'Acura ARX-06',
+  'Ferrari 499P',
+] as const;
 
 export function DropZone() {
   const { loading, progress, error, loadFile } = useSessionStore();
@@ -12,139 +20,163 @@ export function DropZone() {
     (file: File) => {
       setLocalError(null);
       if (!file.name.toLowerCase().endsWith('.ibt')) {
-        setLocalError('Unsupported file type. Please upload an iRacing .ibt telemetry file.');
+        setLocalError('Unsupported file type. Upload an iRacing `.ibt` telemetry file.');
         return;
       }
       if (file.size < 1024) {
-        setLocalError('File is too small to be a valid .ibt telemetry file.');
+        setLocalError('File is too small to be a valid `.ibt` telemetry file.');
         return;
       }
-      loadFile(file);
+      void loadFile(file);
     },
-    [loadFile]
+    [loadFile],
   );
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
+    (event: React.DragEvent) => {
+      event.preventDefault();
       setDragOver(false);
-      const file = e.dataTransfer.files[0];
+      const file = event.dataTransfer.files[0];
       if (file) handleFile(file);
     },
-    [handleFile]
+    [handleFile],
   );
 
   const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
       if (file) handleFile(file);
+      event.target.value = '';
     },
-    [handleFile]
+    [handleFile],
   );
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="text-center max-w-lg w-full animate-slide-up">
-        {/* Logo and branding */}
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[var(--color-accent-glow)] mb-6">
-          <Flag className="w-8 h-8 text-[var(--color-accent)]" />
+    <section className="rounded-[28px] border border-[var(--color-card-border)] bg-[linear-gradient(180deg,rgba(12,19,31,0.98),rgba(7,12,22,0.96))] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.24)]">
+      <div className="mb-5 flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+          <Flag className="h-5 w-5" />
         </div>
-        <h1 className="text-4xl font-extrabold tracking-tight mb-2">
-          GTP <span className="text-[var(--color-accent)]">Telemetry</span>
-        </h1>
-        <p className="text-[var(--color-text-muted)] text-sm mb-10">
-          iRacing Hypercar Setup Analysis &mdash; 14-Item Engineering Checklist
-        </p>
-
-        {/* Drop zone */}
-        <div
-          className={`relative rounded-2xl p-14 mb-8 transition-all duration-300 cursor-pointer group ${
-            dragOver
-              ? 'border-2 border-[var(--color-accent)] bg-[var(--color-accent-glow)] shadow-[0_0_40px_var(--color-accent-glow)]'
-              : 'border-2 border-dashed border-[var(--color-card-border)] hover:border-[var(--color-card-border-hover)] hover:bg-[var(--color-card)]'
-          }`}
-          role="button"
-          tabIndex={0}
-          aria-label="Upload iRacing telemetry file"
-          aria-disabled={loading}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => {
-            if (loading) return;
-            setLocalError(null);
-            fileRef.current?.click();
-          }}
-          onKeyDown={(e) => {
-            if (loading) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setLocalError(null);
-              fileRef.current?.click();
-            }
-          }}
-        >
-          {loading ? (
-            <div role="status" aria-live="polite" aria-atomic="true">
-              <div className="text-[var(--color-accent)] text-lg font-bold mb-3">
-                Analyzing...
-              </div>
-              <div className="text-[var(--color-text-dim)] text-sm mb-4">{progress}</div>
-              <div className="h-1.5 bg-[var(--color-card-border)] rounded-full overflow-hidden max-w-xs mx-auto">
-                <div className="h-full w-1/2 bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-accent-dim)] rounded-full animate-progress" />
-              </div>
-            </div>
-          ) : (
-            <div>
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--color-surface)] mb-4 group-hover:bg-[var(--color-card-hover)] transition-colors">
-                <Upload className="w-5 h-5 text-[var(--color-text-dim)] group-hover:text-[var(--color-accent)] transition-colors" />
-              </div>
-              <div className="text-[var(--color-text-dim)] text-base mb-2 font-medium">
-                Drop <span className="font-mono text-[var(--color-accent)]">.ibt</span> file here or click to browse
-              </div>
-              <div className="text-[var(--color-text-muted)] text-xs flex items-center justify-center gap-1">
-                <span className="font-mono">Documents/iRacing/Telemetry/</span>
-                <ChevronRight className="w-3 h-3" />
-              </div>
-            </div>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".ibt"
-            onChange={handleChange}
-            className="hidden"
-            disabled={loading}
-          />
-        </div>
-
-        {(localError || error) && (
-          <p
-            role="alert"
-            aria-live="assertive"
-            className="text-[var(--color-red)] text-sm mb-4 px-4 py-3 rounded-xl bg-[var(--color-red-dim)] border border-[var(--color-red)]/20"
-          >
-            {localError || error}
+        <div>
+          <p className="font-display text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+            Upload Telemetry
           </p>
-        )}
-
-        {/* Supported cars */}
-        <div className="flex gap-2 justify-center flex-wrap">
-          {['BMW M Hybrid V8', 'Porsche 963', 'Cadillac V-Series.R', 'Acura ARX-06', 'Ferrari 499P'].map(
-            (car) => (
-              <span
-                key={car}
-                className="text-[var(--color-text-muted)] text-[11px] px-3 py-1.5 border border-[var(--color-card-border)] rounded-full hover:border-[var(--color-card-border-hover)] hover:text-[var(--color-text-dim)] transition-colors"
-              >
-                {car}
-              </span>
-            )
-          )}
+          <p className="text-sm text-[var(--color-text-dim)]">
+            Drop an `.ibt` to open the optimizer workspace.
+          </p>
         </div>
       </div>
-    </div>
+
+      <div
+        className={`group rounded-[24px] border p-8 transition-all ${
+          dragOver
+            ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[0_0_0_1px_var(--color-accent),0_20px_48px_rgba(245,158,11,0.12)]'
+            : 'border-dashed border-[var(--color-card-border-hover)] bg-[rgba(9,15,27,0.7)] hover:border-[var(--color-accent)]/60 hover:bg-[rgba(14,21,35,0.88)]'
+        } ${loading ? 'cursor-progress' : 'cursor-pointer'}`}
+        role="button"
+        tabIndex={0}
+        aria-label="Upload iRacing telemetry file"
+        aria-disabled={loading}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        onClick={() => {
+          if (loading) return;
+          setLocalError(null);
+          fileRef.current?.click();
+        }}
+        onKeyDown={(event) => {
+          if (loading) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setLocalError(null);
+            fileRef.current?.click();
+          }
+        }}
+      >
+        {loading ? (
+          <div role="status" aria-live="polite" aria-atomic="true" className="space-y-4 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-surface)] text-[var(--color-accent)]">
+              <Upload className="h-5 w-5 animate-pulse-glow" />
+            </div>
+            <div>
+              <p className="font-display text-xl font-semibold text-[var(--color-text)]">Analyzing Session</p>
+              <p className="mt-1 text-sm text-[var(--color-text-dim)]">{progress}</p>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-line)]">
+              <div className="h-full w-1/2 rounded-full bg-[linear-gradient(90deg,var(--color-accent),var(--color-cyan))] animate-progress" />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-5 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--color-card-border)] bg-[var(--color-surface)] text-[var(--color-accent)] transition-transform duration-200 group-hover:scale-[1.03]">
+              <Upload className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="font-display text-2xl font-semibold text-[var(--color-text)]">
+                Drop `.ibt` Here
+              </p>
+              <p className="mt-2 text-sm leading-7 text-[var(--color-text-dim)]">
+                Load a telemetry run, decode the garage setup, and jump directly into the optimizer queue.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-surface)] px-4 py-3 text-left">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                Typical File Path
+              </p>
+              <p className="mt-2 flex items-center gap-1 font-mono text-xs text-[var(--color-text-dim)]">
+                Documents/iRacing/Telemetry
+                <ChevronRight className="h-3 w-3" />
+                session.ibt
+              </p>
+            </div>
+          </div>
+        )}
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".ibt"
+          onChange={handleChange}
+          className="hidden"
+          disabled={loading}
+        />
+      </div>
+
+      {(localError || error) && (
+        <p
+          role="alert"
+          aria-live="assertive"
+          className="mt-4 rounded-2xl border border-[var(--color-red)] bg-[var(--color-red-dim)] px-4 py-3 text-sm text-[var(--color-red)]"
+        >
+          {localError || error}
+        </p>
+      )}
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="upload-fact">
+          <strong>Optimizer default</strong>
+          <span>Successful uploads land in the setup workspace, not a chart-first dashboard.</span>
+        </div>
+        <div className="upload-fact">
+          <strong>Deterministic first</strong>
+          <span>Exact setup changes lead; AI review stays secondary and advisory.</span>
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {SUPPORTED_CARS.map((car) => (
+          <span
+            key={car}
+            className="rounded-full border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] text-[var(--color-text-dim)]"
+          >
+            {car}
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }

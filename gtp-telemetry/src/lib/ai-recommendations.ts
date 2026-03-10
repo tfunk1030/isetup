@@ -159,7 +159,7 @@ function repairLikelyJson(raw: string): string {
     .replace(/\u201c|\u201d/g, '"')
     .replace(/\u2018|\u2019/g, "'")
     .replace(/,\s*([}\]])/g, '$1')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
+    .replace(/[^\t\n\r\x20-\x7E]/g, '');
 }
 
 function parseModelBriefOrFallback(rawContent: string, analysis: SessionAnalysis, provider: string): ModelBrief {

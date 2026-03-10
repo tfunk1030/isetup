@@ -4,6 +4,7 @@ import { analyzeSession } from '../lib/analysis-engine';
 import { detectCar } from '../lib/car-profiles';
 import { detectTrack, getDefaultTrackProfile } from '../lib/track-profiles';
 import type { SessionAnalysis, CarProfile, TrackProfile } from '../lib/types';
+import type { AppView, EvidencePanelId } from '../lib/ui-types';
 
 interface SessionStore {
   file: File | null;
@@ -13,11 +14,15 @@ interface SessionStore {
   analysis: SessionAnalysis | null;
   carProfile: CarProfile | null;
   trackProfile: TrackProfile | null;
-  activeTab: string;
+  appView: AppView;
+  selectedRecommendationId: string | null;
+  openEvidenceId: EvidencePanelId | null;
 
   loadFile: (file: File) => Promise<void>;
   reset: () => void;
-  setActiveTab: (tab: string) => void;
+  setAppView: (view: AppView) => void;
+  setSelectedRecommendation: (id: string | null) => void;
+  setOpenEvidenceId: (id: EvidencePanelId | null) => void;
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -28,7 +33,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
   analysis: null,
   carProfile: null,
   trackProfile: null,
-  activeTab: 'overview',
+  appView: 'landing',
+  selectedRecommendationId: null,
+  openEvidenceId: null,
 
   loadFile: async (file: File) => {
     set({ loading: true, error: null, progress: 'Reading file...' });
@@ -89,6 +96,9 @@ export const useSessionStore = create<SessionStore>((set) => ({
         analysis: result,
         carProfile,
         trackProfile,
+        appView: 'optimizer',
+        selectedRecommendationId: null,
+        openEvidenceId: null,
       });
     } catch (err) {
       set({
@@ -107,11 +117,15 @@ export const useSessionStore = create<SessionStore>((set) => ({
       analysis: null,
       carProfile: null,
       trackProfile: null,
-      activeTab: 'overview',
+      appView: 'landing',
+      selectedRecommendationId: null,
+      openEvidenceId: null,
     });
   },
 
-  setActiveTab: (tab: string) => {
-    set({ activeTab: tab });
-  },
+  setAppView: (view: AppView) => set({ appView: view }),
+
+  setSelectedRecommendation: (id: string | null) => set({ selectedRecommendationId: id }),
+
+  setOpenEvidenceId: (id: EvidencePanelId | null) => set({ openEvidenceId: id }),
 }));
