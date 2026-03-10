@@ -74,6 +74,31 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
 
   return (
     <Card title="Setup Recommendations" icon={'\u{1F9E0}'}>
+      {/* Constraint violations banner */}
+      {analysis.constraintViolations && analysis.constraintViolations.length > 0 && (
+        <div className="mb-4 p-3 rounded-lg bg-[var(--color-red)]/10 border border-[var(--color-red)]/30">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 rounded-full bg-[var(--color-red)]" />
+            <span className="text-xs font-bold text-[var(--color-red)] uppercase tracking-wider">
+              Sim Constraint Violations ({analysis.constraintViolations.length})
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {analysis.constraintViolations.map((v) => (
+              <div key={v.constraintId} className="text-xs">
+                <span className="text-[var(--color-red)] font-semibold">{v.description}</span>
+                {v.currentValue !== undefined && (
+                  <span className="text-[var(--color-text-muted)]">
+                    {' '}(current: {v.currentValue.toFixed(1)} {v.unit}, limit: {v.limit} {v.unit})
+                  </span>
+                )}
+                <p className="text-[10px] text-[var(--color-text-dim)] mt-0.5">{v.workaround}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Dataset confidence header */}
       <div className="mb-4 p-3 rounded-lg bg-[var(--color-bg)]">
         <div className="flex items-center justify-between mb-2">

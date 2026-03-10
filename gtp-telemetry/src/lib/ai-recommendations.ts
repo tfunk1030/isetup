@@ -5,6 +5,13 @@ import type {
   RecommendationExactness,
   SessionAnalysis,
 } from './types';
+import {
+  SIM_CONSTRAINTS,
+  IMPACT_HIERARCHY,
+  getPhysicsVersionNote,
+  getCarDeepKnowledge,
+  getTrackGuidance,
+} from './domain-knowledge';
 
 const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
@@ -233,12 +240,45 @@ function buildPrompt(analysis: SessionAnalysis): string {
     },
   };
 
+  // Build domain knowledge context
+  const domainContext: string[] = [];
+
+  // Sim constraints
+  domainContext.push(`SIM CONSTRAINTS: ${JSON.stringify(SIM_CONSTRAINTS.map(c => ({ id: c.id, param: c.parameter, limit: c.limit, unit: c.unit })))}`);
+
+  // Impact hierarchy
+  domainContext.push(`IMPACT HIERARCHY (highest first): ${IMPACT_HIERARCHY.map(h => h.description).join(' > ')}`);
+
+  // Physics version
+  const physicsNote = getPhysicsVersionNote();
+  if (physicsNote) domainContext.push(`PHYSICS: ${physicsNote}`);
+
+  // Car deep knowledge
+  const carId = analysis.carProfileId;
+  if (carId) {
+    const carDeep = getCarDeepKnowledge(carId);
+    if (carDeep) {
+      domainContext.push(`CAR: ${carDeep.character}. Diff sensitivity: ${carDeep.diffSensitivity}. ${carDeep.damperScaleWarning}. Weaknesses: ${carDeep.weaknesses.join(', ')}`);
+    }
+  }
+
+  // Track guidance
+  const trackId = analysis.trackProfileId;
+  if (trackId) {
+    const trackGuide = getTrackGuidance(trackId);
+    if (trackGuide) {
+      domainContext.push(`TRACK: ${trackGuide.surfaceType} surface, wing level ${trackGuide.wingLevel}. ${trackGuide.keyCompromise || ''}. Notes: ${trackGuide.specialNotes.slice(0, 2).join('; ')}`);
+    }
+  }
+
   return [
     'You are an elite iRacing GTP setup engineer.',
     'You are receiving structured telemetry reasoning plus the parsed current garage setup.',
+    ...domainContext.map(c => `DOMAIN KNOWLEDGE: ${c}`),
     'Return setup recommendations as structured parameter diffs, not prose bullets.',
     'Prefer exact current -> target changes only when the current garage parameter exists in normalizedSetup.',
     'If a recommendation is limited by missing setup values or sim constraints, mark exactness as "blocked" or "inferred" and explain why.',
+    'Respect the impact hierarchy when prioritizing recommendations.',
     'Focus on setup engineering only (no driving advice).',
     'Return STRICT JSON only with keys:',
     '{ "summary": string, "recommendations": [{ "parameterKey": string, "displayName": string, "currentValue": string, "targetValue": string, "delta": string, "unit": string|null, "reason": string, "evidence": string[], "confidence": "HIGH"|"MEDIUM"|"LOW", "exactness": "exact"|"inferred"|"blocked", "verification": string[], "assumptions": string[] }], "watchItems": string[<=5], "confidenceNote": string, "reasoning": string[<=6], "assumptions": string[<=4] }',
