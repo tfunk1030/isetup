@@ -3,8 +3,8 @@ import { CommandCenterHeader } from './components/app/CommandCenterHeader';
 import { LandingScreen } from './components/app/LandingScreen';
 import { useSessionStore } from './store/session-store';
 
-const OptimizerWorkspace = lazy(() =>
-  import('./components/optimizer/OptimizerWorkspace').then((m) => ({ default: m.OptimizerWorkspace }))
+const EngineeringWorkspace = lazy(() =>
+  import('./components/optimizer/EngineeringWorkspace')
 );
 const ComparePanel = lazy(() =>
   import('./components/compare/ComparePanel').then((m) => ({ default: m.ComparePanel }))
@@ -35,7 +35,7 @@ function ShellBody() {
         {appView === 'compare' && <ComparePanel />}
         {appView === 'diagnose' && <DiagnosePanel />}
         {(appView === 'optimizer' || (!!analysis && appView === 'landing')) && analysis && (
-          <OptimizerWorkspace analysis={analysis} />
+          <EngineeringWorkspace />
         )}
       </Suspense>
     </main>
