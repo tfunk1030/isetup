@@ -12,6 +12,7 @@ import {
   getAIRecommendationMode,
   hasAIRecommendationConfig,
 } from '../../lib/ai-recommendations';
+import { useSessionStore } from '../../store/session-store';
 import type { AISetupBrief, SessionAnalysis } from '../../lib/types';
 
 interface Props {
@@ -87,9 +88,9 @@ export function AIRecommendationAssistant({ analysis }: Props) {
   const [brief, setBrief] = useState<AISetupBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [debugReport, setDebugReport] = useState<AIProviderDebugReport | null>(null);
-  const [driverFeedback, setDriverFeedback] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(true);
   const runIdRef = useRef(0);
+  const { aiDriverFeedback: driverFeedback, setAIDriverFeedback } = useSessionStore();
 
   const configured = hasAIRecommendationConfig();
   const mode = getAIRecommendationMode();
@@ -174,7 +175,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
         {feedbackOpen && (
           <div className="mt-2 space-y-3 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-4">
             <p className="text-[11px] text-[var(--color-text-muted)]">
-              Describe how the car feels so the AI can prioritize setup changes that address your symptoms.
+              Describe how the car feels so the AI can prioritize setup changes that address your symptoms. This text is sent with the AI request.
             </p>
             <div className="flex flex-wrap gap-1.5">
               {FEEDBACK_PRESETS.map((preset) => {
@@ -185,13 +186,11 @@ export function AIRecommendationAssistant({ analysis }: Props) {
                     type="button"
                     onClick={() => {
                       if (active) {
-                        setDriverFeedback((prev) =>
-                          prev.replace(preset, '').replace(/[,;]\s*[,;]/g, ',').replace(/^[,;\s]+|[,;\s]+$/g, '').trim()
+                        setAIDriverFeedback(
+                          driverFeedback.replace(preset, '').replace(/[,;]\s*[,;]/g, ',').replace(/^[,;\s]+|[,;\s]+$/g, '').trim(),
                         );
                       } else {
-                        setDriverFeedback((prev) =>
-                          prev.trim() ? `${prev.trim()}, ${preset}` : preset
-                        );
+                        setAIDriverFeedback(driverFeedback.trim() ? `${driverFeedback.trim()}, ${preset}` : preset);
                       }
                     }}
                     className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
@@ -207,7 +206,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
             </div>
             <textarea
               value={driverFeedback}
-              onChange={(e) => setDriverFeedback(e.target.value)}
+              onChange={(e) => setAIDriverFeedback(e.target.value)}
               placeholder="e.g. &quot;Car pushes hard on entry at T1 and snaps oversteer on exit of fast corners...&quot;"
               rows={3}
               className="w-full resize-y rounded-lg border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
@@ -215,7 +214,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
             {driverFeedback.trim() && (
               <button
                 type="button"
-                onClick={() => setDriverFeedback('')}
+                onClick={() => setAIDriverFeedback('')}
                 className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:underline"
               >
                 Clear feedback

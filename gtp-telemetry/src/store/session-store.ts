@@ -17,12 +17,14 @@ interface SessionStore {
   appView: AppView;
   selectedRecommendationId: string | null;
   openEvidenceId: EvidencePanelId | null;
+  aiDriverFeedback: string;
 
   loadFile: (file: File) => Promise<void>;
   reset: () => void;
   setAppView: (view: AppView) => void;
   setSelectedRecommendation: (id: string | null) => void;
   setOpenEvidenceId: (id: EvidencePanelId | null) => void;
+  setAIDriverFeedback: (feedback: string) => void;
 }
 
 export const useSessionStore = create<SessionStore>((set) => ({
@@ -36,6 +38,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   appView: 'landing',
   selectedRecommendationId: null,
   openEvidenceId: null,
+  aiDriverFeedback: '',
 
   loadFile: async (file: File) => {
     set({ loading: true, error: null, progress: 'Reading file...' });
@@ -99,6 +102,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
         appView: 'optimizer',
         selectedRecommendationId: null,
         openEvidenceId: null,
+        aiDriverFeedback: '',
       });
     } catch (err) {
       set({
@@ -120,6 +124,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       appView: 'landing',
       selectedRecommendationId: null,
       openEvidenceId: null,
+      aiDriverFeedback: '',
     });
   },
 
@@ -128,4 +133,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setSelectedRecommendation: (id: string | null) => set({ selectedRecommendationId: id }),
 
   setOpenEvidenceId: (id: EvidencePanelId | null) => set({ openEvidenceId: id }),
+
+  setAIDriverFeedback: (feedback: string) => set({ aiDriverFeedback: feedback }),
 }));
