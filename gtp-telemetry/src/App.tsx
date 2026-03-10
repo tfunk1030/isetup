@@ -51,8 +51,8 @@ const EngineTempsPanel = lazy(() =>
 const RARBAnalysis = lazy(() =>
   import('./components/dashboard/RARBAnalysis').then((m) => ({ default: m.RARBAnalysis }))
 );
-const SetupDump = lazy(() =>
-  import('./components/dashboard/SetupDump').then((m) => ({ default: m.SetupDump }))
+const SetupDashboard = lazy(() =>
+  import('./components/dashboard/SetupDashboard').then((m) => ({ default: m.SetupDashboard }))
 );
 const AIRecommendationAssistant = lazy(() =>
   import('./components/dashboard/AIRecommendationAssistant').then((m) => ({ default: m.AIRecommendationAssistant }))
@@ -169,7 +169,7 @@ function Dashboard() {
             )}
 
             {activeTab === 'setup' && (
-              <SetupDump analysis={a} />
+              <SetupDashboard analysis={a} />
             )}
           </section>
         </Suspense>
