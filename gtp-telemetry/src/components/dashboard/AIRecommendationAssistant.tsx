@@ -178,6 +178,19 @@ export function AIRecommendationAssistant({ analysis }: Props) {
                           <span className="ml-2 text-[var(--color-text-muted)]">({item.delta})</span>
                         </p>
                         <p className="text-xs text-[var(--color-text-muted)] mt-1.5">{item.reason}</p>
+                        {item.currentSourcePath && (
+                          <p className="text-[11px] text-[var(--color-text-muted)] mt-1.5">
+                            Garage path: <span className="font-mono text-[var(--color-text-dim)]">{item.currentSourcePath}</span>
+                            {item.mappingQuality && item.mappingConfidence && (
+                              <span> ({item.mappingQuality}, {item.mappingConfidence})</span>
+                            )}
+                          </p>
+                        )}
+                        {item.mappingAmbiguities && item.mappingAmbiguities.length > 0 && (
+                          <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                            Alternative matches: <span className="font-mono text-[var(--color-text-dim)]">{item.mappingAmbiguities.join(', ')}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
 

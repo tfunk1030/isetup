@@ -72,18 +72,20 @@ function dedupeStrings(values: string[], limit: number): string[] {
   return out;
 }
 
-function findSourcePath(analysis: SessionAnalysis, parameterKey?: string): string | undefined {
+function findMappedParameter(analysis: SessionAnalysis, parameterKey?: string) {
   if (!parameterKey) return undefined;
-  return analysis.normalizedSetup.parameters.find((parameter) => parameter.parameterKey === parameterKey)?.sourcePath;
+  return analysis.normalizedSetup.parameters.find((parameter) => parameter.parameterKey === parameterKey);
+}
+
+function findSourcePath(analysis: SessionAnalysis, parameterKey?: string): string | undefined {
+  return findMappedParameter(analysis, parameterKey)?.sourcePath;
 }
 
 function validateRecommendation(
   analysis: SessionAnalysis,
   recommendation: AIRecommendationItem
 ): AIRecommendationItem {
-  const matchedParameter = analysis.normalizedSetup.parameters.find(
-    (parameter) => parameter.parameterKey === recommendation.parameterKey
-  );
+  const matchedParameter = findMappedParameter(analysis, recommendation.parameterKey);
 
   if (!matchedParameter) {
     return {
@@ -97,26 +99,51 @@ function validateRecommendation(
         4
       ),
       currentSourcePath: undefined,
+      mappingConfidence: undefined,
+      mappingQuality: undefined,
+      mappingAmbiguities: [],
     };
   }
 
-  const assumptions = recommendation.currentValue !== matchedParameter.displayValue
-    ? [...recommendation.assumptions, `Current value grounded to parsed setup (${matchedParameter.displayValue}) from ${matchedParameter.sourcePath}.`]
-    : recommendation.assumptions;
+  const assumptions = [...recommendation.assumptions];
+  if (recommendation.currentValue !== matchedParameter.displayValue) {
+    assumptions.push(`Current value grounded to parsed setup (${matchedParameter.displayValue}) from ${matchedParameter.sourcePath}.`);
+  }
+  if (matchedParameter.mappingQuality !== 'exact') {
+    assumptions.push(`Mapping quality is "${matchedParameter.mappingQuality}" for ${matchedParameter.displayName}; treat exact deltas as directional.`);
+  }
+  if (matchedParameter.ambiguousMatches.length > 0) {
+    assumptions.push(`Alternative matched garage paths: ${matchedParameter.ambiguousMatches.join(', ')}.`);
+  }
+  if (matchedParameter.confidence !== 'HIGH') {
+    assumptions.push(`Mapping confidence is ${matchedParameter.confidence}; verify this path in the garage before applying.`);
+  }
+
+  const mappingLimited = matchedParameter.mappingQuality !== 'exact'
+    || matchedParameter.ambiguousMatches.length > 0
+    || matchedParameter.confidence !== 'HIGH';
 
   return {
     ...recommendation,
     displayName: matchedParameter.displayName,
     currentValue: matchedParameter.displayValue,
     currentSourcePath: matchedParameter.sourcePath,
-    exactness: recommendation.exactness === 'blocked' ? 'blocked' : recommendation.exactness,
+    exactness: recommendation.exactness === 'blocked'
+      ? 'blocked'
+      : recommendation.exactness === 'exact' && mappingLimited
+        ? 'inferred'
+        : recommendation.exactness,
     assumptions: dedupeStrings(assumptions, 4),
+    mappingConfidence: matchedParameter.confidence,
+    mappingQuality: matchedParameter.mappingQuality,
+    mappingAmbiguities: matchedParameter.ambiguousMatches,
   };
 }
 
 function fallbackRecommendation(analysis: SessionAnalysis, index: number): AIRecommendationItem {
   const recommendation = analysis.recommendations[index];
   const primarySpecific = recommendation.specifics?.[0];
+  const mappedParameter = findMappedParameter(analysis, recommendation.parameterKey);
   return {
     parameterKey: recommendation.parameterKey || recommendation.id,
     displayName: primarySpecific?.parameter || recommendation.title,
@@ -131,6 +158,9 @@ function fallbackRecommendation(analysis: SessionAnalysis, index: number): AIRec
     assumptions: recommendation.blockedBy || [],
     source: 'rule-engine',
     currentSourcePath: findSourcePath(analysis, recommendation.parameterKey),
+    mappingConfidence: mappedParameter?.confidence,
+    mappingQuality: mappedParameter?.mappingQuality,
+    mappingAmbiguities: mappedParameter?.ambiguousMatches || [],
   };
 }
 
@@ -138,8 +168,11 @@ function buildFallbackBrief(analysis: SessionAnalysis): AISetupBrief {
   const top = analysis.recommendations.slice(0, 3);
   const watchItems = [
     ...analysis.dataQuality.notes,
+    ...analysis.normalizedSetup.mappingWarnings.slice(0, 3),
     ...top.flatMap((r) => r.evidence).slice(0, 3),
   ];
+  const mappingSummary = analysis.normalizedSetup.mappingStats;
+  const mappingSummaryNote = `Setup mapping: ${mappingSummary.exact} exact, ${mappingSummary.ordered} ordered, ${mappingSummary.ambiguous} ambiguous.`;
 
   return {
     summary: top.length > 0
@@ -164,7 +197,7 @@ function buildFallbackBrief(analysis: SessionAnalysis): AISetupBrief {
     watchItems: watchItems.length > 0
       ? watchItems
       : ['No major quality issues detected.'],
-    confidenceNote: `Dataset confidence is ${analysis.dataQuality.confidence}.`,
+    confidenceNote: `Dataset confidence is ${analysis.dataQuality.confidence}. ${mappingSummaryNote}`,
     reasoning: top.map((r) => r.rationale).slice(0, 4),
     disagreements: [],
     source: 'rule-engine',
@@ -215,11 +248,15 @@ function buildPrompt(analysis: SessionAnalysis): string {
       sourcePath: parameter.sourcePath,
       valueType: parameter.valueType,
       confidence: parameter.confidence,
+      mappingQuality: parameter.mappingQuality,
+      ambiguousMatches: parameter.ambiguousMatches,
     })),
     setupCoverage: {
       architecture: analysis.normalizedSetup.architecture,
       missingKeys: analysis.normalizedSetup.missingKeys,
       unsupportedKeys: analysis.normalizedSetup.unsupportedKeys,
+      mappingStats: analysis.normalizedSetup.mappingStats,
+      mappingWarnings: analysis.normalizedSetup.mappingWarnings,
     },
     telemetryReasoning: analysis.telemetryReasoning,
     topRecommendations: topRecs,
@@ -276,7 +313,8 @@ function buildPrompt(analysis: SessionAnalysis): string {
     'You are receiving structured telemetry reasoning plus the parsed current garage setup.',
     ...domainContext.map(c => `DOMAIN KNOWLEDGE: ${c}`),
     'Return setup recommendations as structured parameter diffs, not prose bullets.',
-    'Prefer exact current -> target changes only when the current garage parameter exists in normalizedSetup.',
+    'Only mark exactness as "exact" when the parameter has mappingQuality "exact", confidence "HIGH", and no ambiguousMatches.',
+    'If mappingQuality is not exact, confidence is not HIGH, or ambiguousMatches is non-empty, exactness must be "inferred".',
     'If a recommendation is limited by missing setup values or sim constraints, mark exactness as "blocked" or "inferred" and explain why.',
     'Respect the impact hierarchy when prioritizing recommendations.',
     'Focus on setup engineering only (no driving advice).',
@@ -491,6 +529,8 @@ function mergeRecommendations(results: ModelResult[]): { recommendations: AIReco
 }
 
 function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis): AISetupBrief {
+  const mappingSummary = analysis.normalizedSetup.mappingStats;
+  const mappingSummaryNote = `Mapping quality: ${mappingSummary.exact} exact, ${mappingSummary.ordered} ordered, ${mappingSummary.ambiguous} ambiguous.`;
   if (results.length === 0) return buildFallbackBrief(analysis);
   if (results.length === 1) {
     const single = results[0];
@@ -499,8 +539,11 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
       recommendations: single.brief.recommendations.length > 0
         ? single.brief.recommendations
         : buildFallbackBrief(analysis).recommendations,
-      watchItems: single.brief.watchItems,
-      confidenceNote: `${single.brief.confidenceNote} Dataset confidence: ${analysis.dataQuality.confidence}.`,
+      watchItems: dedupeStrings(
+        [...single.brief.watchItems, ...analysis.normalizedSetup.mappingWarnings.slice(0, 2)],
+        5,
+      ),
+      confidenceNote: `${single.brief.confidenceNote} Dataset confidence: ${analysis.dataQuality.confidence}. ${mappingSummaryNote}`,
       reasoning: single.brief.reasoning,
       disagreements: single.brief.assumptions,
       source: 'single-model',
@@ -536,8 +579,10 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     recommendations: mergedRecommendations.recommendations.length > 0
       ? mergedRecommendations.recommendations
       : buildFallbackBrief(analysis).recommendations,
-    watchItems: mergedWatch.length > 0 ? mergedWatch : analysis.dataQuality.notes.slice(0, 4),
-    confidenceNote: `Dual-model synthesis complete. ${analysis.dataQuality.confidence} telemetry confidence. Resolve disagreements before final setup lock.`,
+    watchItems: mergedWatch.length > 0
+      ? dedupeStrings([...mergedWatch, ...analysis.normalizedSetup.mappingWarnings.slice(0, 2)], 5)
+      : dedupeStrings([...analysis.dataQuality.notes.slice(0, 4), ...analysis.normalizedSetup.mappingWarnings.slice(0, 2)], 5),
+    confidenceNote: `Dual-model synthesis complete. ${analysis.dataQuality.confidence} telemetry confidence. ${mappingSummaryNote} Resolve disagreements before final setup lock.`,
     reasoning: mergedReasoning,
     disagreements: disagreementDetails,
     source: 'consensus',
