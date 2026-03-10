@@ -198,6 +198,13 @@ function buildPrompt(analysis: SessionAnalysis): string {
     specifics: r.specifics || [],
     parameterKey: r.parameterKey ?? null,
     exactness: r.exactness ?? 'inferred',
+    expectedEffect: r.expectedEffect ?? null,
+    expectedEffectTypes: r.expectedEffectTypes ?? [],
+    hypothesis: r.hypothesis ?? null,
+    successProbability: r.successProbability ?? null,
+    rankScore: r.rankScore ?? null,
+    sideEffectRisks: r.sideEffectRisks ?? [],
+    doNotTrustIf: r.doNotTrustIf ?? [],
     verify: r.verify || [],
     blockedBy: r.blockedBy || [],
   }));
@@ -239,6 +246,8 @@ function buildPrompt(analysis: SessionAnalysis): string {
       mappingWarnings: analysis.normalizedSetup.mappingWarnings,
     },
     telemetryReasoning: analysis.telemetryReasoning,
+    segmentFeatures: analysis.segmentFeatures,
+    recommendationGuardrails: analysis.recommendationGuardrails,
     topRecommendations: topRecs,
     keyMetrics: {
       cleanBottoming: analysis.bottoming.clean,

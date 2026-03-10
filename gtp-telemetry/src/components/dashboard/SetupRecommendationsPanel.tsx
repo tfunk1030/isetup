@@ -260,6 +260,11 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
                               <span className="text-[var(--color-text-dim)] font-semibold">Expected effect:</span> {item.expectedEffect}
                             </p>
                           )}
+                          {typeof item.rankScore === 'number' && (
+                            <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
+                              <span className="text-[var(--color-text-dim)] font-semibold">Rank score:</span> {(item.rankScore * 100).toFixed(0)}/100
+                            </p>
+                          )}
                           {item.expectedGain && (
                             <p className="text-[11px] text-[var(--color-text-muted)] mb-2">
                               <span className="text-[var(--color-text-dim)] font-semibold">Expected lap delta:</span>{' '}

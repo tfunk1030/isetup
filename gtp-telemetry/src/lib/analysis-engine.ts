@@ -1157,6 +1157,9 @@ function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupR
   withPriority.sort((a, b) => {
     const bySeverity = severityWeight(a.severity) - severityWeight(b.severity);
     if (bySeverity !== 0) return bySeverity;
+    const rankA = a.rankScore ?? 0;
+    const rankB = b.rankScore ?? 0;
+    if (rankA !== rankB) return rankB - rankA;
     const byPriority = a.priority - b.priority;
     if (byPriority !== 0) return byPriority;
     return a.title.localeCompare(b.title);
@@ -1209,6 +1212,16 @@ function buildMetadataForRecommendation(
     POWERTRAIN: 'Reduce driveline stress and align power delivery with corner demands.',
     TRACK: 'Improve recommendation reliability by collecting cleaner context data.',
   };
+  const expectedEffectTypesByCategory: Record<DraftRecommendation['category'], string[]> = {
+    PLATFORM: ['high_speed_platform_stability', 'bottoming_reduction'],
+    AERO: ['aero_consistency', 'splitter_clearance_recovery'],
+    TYRES: ['thermal_balance', 'contact_patch_quality'],
+    DYNAMICS: ['entry_mid_exit_balance', 'transient_control'],
+    AIDS: ['control_map_stability', 'exit_consistency'],
+    BRAKES: ['entry_stability', 'braking_rotation_control'],
+    POWERTRAIN: ['drivability_consistency', 'efficiency_window'],
+    TRACK: ['data_quality_reliability'],
+  };
   const sideEffectsByCategory: Record<DraftRecommendation['category'], string[]> = {
     PLATFORM: ['May increase low-speed understeer if front support is raised too far.'],
     AERO: ['Extra clearance/support can reduce peak front downforce and initial turn-in bite.'],
@@ -1222,8 +1235,8 @@ function buildMetadataForRecommendation(
 
   const base = gainBySeverity[recommendation.severity];
   const weight = categoryGainWeight(recommendation.category);
-  const blockedPenalty = recommendation.exactness === 'blocked' ? 0.25 : 1;
-  const median = Number((base.median * weight * blockedPenalty).toFixed(2));
+  const gainBlockedPenalty = recommendation.exactness === 'blocked' ? 0.25 : 1;
+  const median = Number((base.median * weight * gainBlockedPenalty).toFixed(2));
   const interval90: [number, number] = [
     Number((base.interval[0] * weight).toFixed(2)),
     Number((base.interval[1] * weight).toFixed(2)),
@@ -1238,6 +1251,10 @@ function buildMetadataForRecommendation(
   const successProbability = clamp01(
     dataScore * 0.4 + mappingScore * 0.3 + modelScore * 0.2 + constraintsScore * 0.1
   );
+  const gainMagnitude = Math.abs(median);
+  const sideEffectPenalty = Math.min((sideEffectsByCategory[recommendation.category].length || 0) * 0.03, 0.12);
+  const rankingBlockedPenalty = recommendation.exactness === 'blocked' ? 0.25 : 0;
+  const rankScore = clamp01(successProbability * 0.55 + Math.min(gainMagnitude / 0.25, 1) * 0.45 - sideEffectPenalty - rankingBlockedPenalty);
 
   const doNotTrustIf = [
     ...(dataQuality.validLapCount < 3 ? ['Valid laps < 3; collect a longer representative stint first.'] : []),
@@ -1253,6 +1270,8 @@ function buildMetadataForRecommendation(
   return {
     ...recommendation,
     expectedEffect: expectedEffectByCategory[recommendation.category],
+    expectedEffectTypes: expectedEffectTypesByCategory[recommendation.category],
+    hypothesis: recommendation.rationale,
     sideEffectRisks: sideEffectsByCategory[recommendation.category],
     expectedGain: {
       metric: 'lapTimeDeltaSec',
@@ -1267,6 +1286,7 @@ function buildMetadataForRecommendation(
       model: modelScore,
       constraints: Number(constraintsScore.toFixed(2)),
     },
+    rankScore: Number(rankScore.toFixed(2)),
     validationProtocol,
     doNotTrustIf,
   };

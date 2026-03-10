@@ -297,10 +297,13 @@ export interface SetupRecommendation {
   verify?: string[];
   blockedBy?: string[];
   expectedEffect?: string;
+  expectedEffectTypes?: string[];
+  hypothesis?: string;
   sideEffectRisks?: string[];
   expectedGain?: RecommendationExpectedGain;
   successProbability?: number;
   confidenceBreakdown?: RecommendationConfidenceBreakdown;
+  rankScore?: number;
   validationProtocol?: string[];
   doNotTrustIf?: string[];
   source?: 'rule-engine';

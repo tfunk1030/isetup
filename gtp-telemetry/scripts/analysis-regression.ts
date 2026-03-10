@@ -190,6 +190,10 @@ function run(): void {
     baselineResult.recommendations.some((r) => typeof r.successProbability === 'number'),
     'baseline recommendations should include success probability metadata'
   );
+  assert(
+    baselineResult.recommendations.some((r) => typeof r.rankScore === 'number'),
+    'baseline recommendations should include ranking metadata'
+  );
 
   const lowCoverage = buildFixture({
     dropChannels: ['LFtempL', 'LFtempM', 'LFtempR', 'RFtempL', 'RFtempM', 'RFtempR', 'LRtempL', 'LRtempM', 'LRtempR', 'RRtempL', 'RRtempM', 'RRtempR'],
