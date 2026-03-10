@@ -736,26 +736,110 @@ export const DAMPER_SLOPE_GUIDANCE: DamperSlopeRule[] = [
 
 // ── Helper functions ───────────────────────────────────────────
 
-/** Get the impact hierarchy rank for a parameter key (lower = more impactful) */
+/** Get the impact hierarchy rank for a parameter key (lower = more impactful).
+ *  Accepts both scoped keys (e.g. 'platform.frontHeaveSpring', 'dampers.LF.hsComp')
+ *  and unscoped keys (e.g. 'frontHeaveSpring'). */
 export function getImpactRank(parameterKey: string): number {
+  // Try exact match first
   for (const level of IMPACT_HIERARCHY) {
     if (level.parameterKeys.includes(parameterKey)) {
       return level.rank;
     }
   }
+  // Strip scope prefix — take the last segment for keys like 'platform.frontHeaveSpring'
+  // or second-to-last + last for corner-scoped keys like 'dampers.LF.hsComp'
+  const segments = parameterKey.split('.');
+  if (segments.length > 1) {
+    const leafKey = segments[segments.length - 1];
+    for (const level of IMPACT_HIERARCHY) {
+      if (level.parameterKeys.includes(leafKey)) {
+        return level.rank;
+      }
+    }
+  }
+  // Try mapping normalized keys to hierarchy keys
+  const NORMALIZED_TO_HIERARCHY: Record<string, string> = {
+    'bias': 'brakeBias',
+    'migration': 'brakeMigration',
+    'rearWingAngle': 'rearWingAngle',
+    'frontPushrod': 'frontPushrod',
+    'rearPushrod': 'rearPushrod',
+    'frontHeaveSpring': 'frontHeaveSpring',
+    'frontHeavePerch': 'frontHeavePerch',
+    'rearHeaveSpring': 'rearThirdSpring',
+    'rearHeavePerch': 'rearThirdPerch',
+    'frontArbSize': 'frontArbSize',
+    'frontArbBlades': 'frontArbBlades',
+    'rearArbSize': 'rearArbSize',
+    'rearArbBlades': 'rearArbBlades',
+    'frontToe': 'frontToe',
+    'rearToe': 'rearToe',
+    'frontCamber': 'frontCamber',
+    'rearCamber': 'rearCamber',
+    'rearPreload': 'rearDiffPreload',
+    'frontPreload': 'frontDiffPreload',
+    'hsComp': 'frontHSComp',
+    'hsSlope': 'frontHSCompSlope',
+    'startingPressure': 'LFcoldPressure',
+  };
+  if (segments.length > 1) {
+    const mapped = NORMALIZED_TO_HIERARCHY[segments[segments.length - 1]];
+    if (mapped) {
+      for (const level of IMPACT_HIERARCHY) {
+        if (level.parameterKeys.includes(mapped)) {
+          return level.rank;
+        }
+      }
+    }
+  }
   return 99; // Unknown parameter
 }
 
-/** Get track guidance by matching track profile ID */
-export function getTrackGuidance(trackProfileId: string | null): TrackSetupGuidance | null {
-  if (!trackProfileId) return null;
-  return TRACK_SETUP_GUIDANCE[trackProfileId] ?? null;
+/** Normalize an ID for lookup: replace hyphens with underscores, lowercase */
+function normalizeId(id: string): string {
+  return id.toLowerCase().replace(/-/g, '_');
 }
 
-/** Get car deep knowledge by matching car profile ID */
+/** Get track guidance by matching track profile ID.
+ *  Handles hyphenated IDs (e.g. 'watkins-glen') by normalizing to underscore keys
+ *  (e.g. 'watkins_glen') used in TRACK_SETUP_GUIDANCE. */
+export function getTrackGuidance(trackProfileId: string | null): TrackSetupGuidance | null {
+  if (!trackProfileId) return null;
+  // Direct match
+  if (TRACK_SETUP_GUIDANCE[trackProfileId]) return TRACK_SETUP_GUIDANCE[trackProfileId];
+  // Normalize hyphens to underscores
+  const normalized = normalizeId(trackProfileId);
+  if (TRACK_SETUP_GUIDANCE[normalized]) return TRACK_SETUP_GUIDANCE[normalized];
+  // Try stripping common suffixes like '-gp' → '_gp' (e.g. 'indianapolis-gp' → 'indianapolis')
+  const withoutSuffix = normalized.replace(/_gp$/, '');
+  if (TRACK_SETUP_GUIDANCE[withoutSuffix]) return TRACK_SETUP_GUIDANCE[withoutSuffix];
+  return null;
+}
+
+/** Get car deep knowledge by matching car profile ID.
+ *  Handles full model IDs (e.g. 'bmw-m-hybrid-v8') by extracting the short
+ *  manufacturer key (e.g. 'bmw') used in CAR_DEEP_KNOWLEDGE. */
 export function getCarDeepKnowledge(carProfileId: string | null): CarDeepKnowledge | null {
   if (!carProfileId) return null;
-  return CAR_DEEP_KNOWLEDGE[carProfileId] ?? null;
+  // Direct match
+  if (CAR_DEEP_KNOWLEDGE[carProfileId]) return CAR_DEEP_KNOWLEDGE[carProfileId];
+  // Normalize and try
+  const normalized = normalizeId(carProfileId);
+  if (CAR_DEEP_KNOWLEDGE[normalized]) return CAR_DEEP_KNOWLEDGE[normalized];
+  // Extract manufacturer short name from full ID (e.g. 'bmw-m-hybrid-v8' → 'bmw')
+  const CAR_ID_TO_SHORT: Record<string, string> = {
+    'bmw_m_hybrid_v8': 'bmw',
+    'cadillac_v_series_r': 'cadillac',
+    'porsche_963': 'porsche',
+    'acura_arx_06': 'acura',
+    'ferrari_499p': 'ferrari',
+  };
+  const shortKey = CAR_ID_TO_SHORT[normalized];
+  if (shortKey && CAR_DEEP_KNOWLEDGE[shortKey]) return CAR_DEEP_KNOWLEDGE[shortKey];
+  // Fallback: try first segment before first hyphen/underscore as manufacturer
+  const firstSegment = carProfileId.split(/[-_]/)[0].toLowerCase();
+  if (CAR_DEEP_KNOWLEDGE[firstSegment]) return CAR_DEEP_KNOWLEDGE[firstSegment];
+  return null;
 }
 
 /** Get current physics version note */
