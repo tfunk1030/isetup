@@ -89,7 +89,13 @@ function Dashboard() {
       <div className="p-6 max-w-[1440px] mx-auto">
         <Suspense fallback={<LoadingFallback />}>
           {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div
+              id="tabpanel-overview"
+              role="tabpanel"
+              aria-labelledby="tab-overview"
+              tabIndex={0}
+              className="space-y-6"
+            >
               <SetupRecommendationsPanel analysis={a} />
               <AIRecommendationAssistant analysis={a} />
               <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
@@ -132,7 +138,14 @@ function Dashboard() {
           )}
 
           {activeTab === 'tyres' && (
-            <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
+            <div
+              id="tabpanel-tyres"
+              role="tabpanel"
+              aria-labelledby="tab-tyres"
+              tabIndex={0}
+              className="grid gap-5"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}
+            >
               <TyreTempsPanel analysis={a} />
               <TyrePressuresChart analysis={a} />
               <TyreWearPanel analysis={a} />
@@ -140,7 +153,14 @@ function Dashboard() {
           )}
 
           {activeTab === 'platform' && (
-            <div className="grid gap-5" style={{ gridTemplateColumns: '1fr' }}>
+            <div
+              id="tabpanel-platform"
+              role="tabpanel"
+              aria-labelledby="tab-platform"
+              tabIndex={0}
+              className="grid gap-5"
+              style={{ gridTemplateColumns: '1fr' }}
+            >
               <RideHeightScatter analysis={a} />
               <SplitterAnalysis analysis={a} />
               <ShockVelocityPanel analysis={a} />
@@ -148,7 +168,14 @@ function Dashboard() {
           )}
 
           {activeTab === 'dynamics' && (
-            <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}>
+            <div
+              id="tabpanel-dynamics"
+              role="tabpanel"
+              aria-labelledby="tab-dynamics"
+              tabIndex={0}
+              className="grid gap-5"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}
+            >
               <GForceScatter analysis={a} />
               <DriverAidsPanel analysis={a} />
               <RARBAnalysis analysis={a} />
@@ -158,15 +185,36 @@ function Dashboard() {
           )}
 
           {activeTab === 'diagnose' && (
-            <DiagnosePanel />
+            <div
+              id="tabpanel-diagnose"
+              role="tabpanel"
+              aria-labelledby="tab-diagnose"
+              tabIndex={0}
+            >
+              <DiagnosePanel />
+            </div>
           )}
 
           {activeTab === 'compare' && (
-            <ComparePanel />
+            <div
+              id="tabpanel-compare"
+              role="tabpanel"
+              aria-labelledby="tab-compare"
+              tabIndex={0}
+            >
+              <ComparePanel />
+            </div>
           )}
 
           {activeTab === 'setup' && (
-            <SetupDump analysis={a} />
+            <div
+              id="tabpanel-setup"
+              role="tabpanel"
+              aria-labelledby="tab-setup"
+              tabIndex={0}
+            >
+              <SetupDump analysis={a} />
+            </div>
           )}
         </Suspense>
       </div>

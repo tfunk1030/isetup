@@ -113,6 +113,8 @@ export function DiagnosePanel() {
           <div className="flex items-end">
             <button
               onClick={() => setIsWet(!isWet)}
+              type="button"
+              aria-pressed={isWet}
               className={`inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg border transition-all cursor-pointer ${
                 isWet
                   ? 'bg-[var(--color-blue-dim)] text-[var(--color-blue)] border-[var(--color-blue)]/30'
@@ -133,6 +135,8 @@ export function DiagnosePanel() {
               <button
                 key={s.id}
                 onClick={() => setSymptom(symptom === s.id ? null : s.id)}
+                type="button"
+                aria-pressed={symptom === s.id}
                 className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
                   symptom === s.id
                     ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)] shadow-[0_0_12px_var(--color-accent-glow)]'
@@ -155,6 +159,8 @@ export function DiagnosePanel() {
                 <button
                   key={p.id}
                   onClick={() => setPhase(phase === p.id ? null : p.id)}
+                  type="button"
+                  aria-pressed={phase === p.id}
                   className={`flex-1 inline-flex items-center justify-center gap-1.5 text-xs py-2 px-3 rounded-lg border transition-all cursor-pointer ${
                     phase === p.id
                       ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)]'
@@ -174,6 +180,8 @@ export function DiagnosePanel() {
                 <button
                   key={s.id}
                   onClick={() => setSpeed(speed === s.id ? null : s.id)}
+                  type="button"
+                  aria-pressed={speed === s.id}
                   className={`flex-1 text-xs py-2 px-3 rounded-lg border transition-all cursor-pointer ${
                     speed === s.id
                       ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)]'
