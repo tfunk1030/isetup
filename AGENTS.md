@@ -116,3 +116,21 @@ Read these in order for a fast orientation:
 4. `gtp-telemetry/src/lib/analysis-engine.ts`
 5. `iracing-gtp-engineer-plugin/plugin.json`
 6. `iracing-gtp-engineer-plugin/install.ps1`
+
+## Cursor Cloud specific instructions
+
+### Services
+
+- **gtp-telemetry** — the only service to run. Start with `cd gtp-telemetry && npm run dev -- --host 0.0.0.0` (port 5173). This is a local-first browser app with no backend; the dev server is all that's needed.
+- The Python parser (`iracing-gtp-engineer-plugin/scripts/parse_ibt.py`) is validated via `python3 -m py_compile` — it is not a running service.
+
+### Validation commands
+
+See the "Validation checklist" section above. In short: `npm run lint`, `npm run build`, and `npm run analysis:regression` from `gtp-telemetry/`.
+
+### Notes
+
+- There is no automated test suite; validation is lint + build + regression script + manual smoke testing.
+- AI Setup Assistant features (Gemini/Anthropic) are optional and degrade gracefully to a local rule-engine fallback when API keys are not configured.
+- No databases, Docker, or external services are required for core functionality.
+- The `.cursor/environment.json` file has been deleted from the repo so that snapshot-managed environment settings take effect.
