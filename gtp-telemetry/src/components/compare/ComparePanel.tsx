@@ -3,7 +3,7 @@ import { Card } from '../shared/Card';
 import { getAllCars } from '../../lib/car-profiles';
 import { parseSetupInput, compareSetups } from '../../lib/setup-compare';
 import { useSessionStore } from '../../store/session-store';
-import type { CompareResult, SetupDiff } from '../../lib/types';
+import type { CompareResult, NormalizedSetup, SetupDiff } from '../../lib/types';
 
 function directionColor(d: SetupDiff['impactDirection']): string {
   if (d === 'positive') return 'var(--color-green)';
@@ -50,15 +50,16 @@ export function ComparePanel() {
     setError(null);
     setResult(null);
 
-    let setupA;
+    let setupA: NormalizedSetup;
     if (useSession && analysis) {
       setupA = analysis.normalizedSetup;
     } else {
-      setupA = parseSetupInput(textA, selectedCar);
-      if (!setupA) {
+      const parsed = parseSetupInput(textA, selectedCar);
+      if (!parsed) {
         setError('Could not parse Setup A. Paste valid YAML or JSON from iRacing garage export.');
         return;
       }
+      setupA = parsed;
     }
 
     const setupB = parseSetupInput(textB, selectedCar);
