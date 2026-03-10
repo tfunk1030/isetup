@@ -297,6 +297,8 @@ export type SetupParameterGroup =
   | 'tyres'
   | 'electronics';
 
+export type SetupMappingQuality = 'exact' | 'ordered';
+
 export interface NormalizedSetupParameter {
   parameterKey: string;
   displayName: string;
@@ -310,6 +312,8 @@ export interface NormalizedSetupParameter {
   valueType: 'number' | 'string';
   numericValue?: number;
   confidence: ConfidenceLevel;
+  mappingQuality: SetupMappingQuality;
+  ambiguousMatches: string[];
 }
 
 export interface NormalizedSetup {
@@ -317,6 +321,12 @@ export interface NormalizedSetup {
   parameters: NormalizedSetupParameter[];
   missingKeys: string[];
   unsupportedKeys: string[];
+  mappingWarnings: string[];
+  mappingStats: {
+    exact: number;
+    ordered: number;
+    ambiguous: number;
+  };
 }
 
 export type ReasoningPhase = 'entry' | 'mid' | 'exit' | 'platform' | 'tyres';
@@ -352,8 +362,11 @@ export interface AIRecommendationItem {
   exactness: RecommendationExactness;
   verification: string[];
   assumptions: string[];
-  source: 'ai' | 'rule-engine';
+  source: 'ai';
   currentSourcePath?: string;
+  mappingConfidence?: ConfidenceLevel;
+  mappingQuality?: SetupMappingQuality;
+  mappingAmbiguities?: string[];
 }
 
 export interface AISetupBrief {
@@ -363,7 +376,7 @@ export interface AISetupBrief {
   confidenceNote: string;
   reasoning: string[];
   disagreements: string[];
-  source: 'consensus' | 'single-model' | 'rule-engine';
+  source: 'consensus' | 'single-model';
   modelsUsed: string[];
 }
 

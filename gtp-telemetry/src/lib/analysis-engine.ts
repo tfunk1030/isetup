@@ -54,6 +54,7 @@ import {
 } from './domain-knowledge';
 
 type Channels = Record<string, Float64Array | null>;
+const ENABLE_RULE_ENGINE_RECOMMENDATIONS = false;
 
 function loadChannels(parsed: IBTParsed): Channels {
   const ch: Channels = {};
@@ -1053,7 +1054,65 @@ function recommendationPriority(rec: DraftRecommendation): number {
   return Math.min(byCategory[rec.category], bySeverity[rec.severity]);
 }
 
-function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupRecommendation[] {
+function mergeUniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+function applyMappingAwareness(
+  recommendation: DraftRecommendation,
+  normalizedSetup: NormalizedSetup,
+): DraftRecommendation {
+  if (!recommendation.parameterKey) return recommendation;
+
+  const parameter = getNormalizedParameter(normalizedSetup, recommendation.parameterKey);
+  if (!parameter) {
+    const missingNote = `Parameter key "${recommendation.parameterKey}" was not found in the parsed setup mapping.`;
+    return {
+      ...recommendation,
+      exactness: recommendation.exactness === 'exact' ? 'blocked' : recommendation.exactness,
+      blockedBy: mergeUniqueStrings([...(recommendation.blockedBy || []), missingNote]),
+    };
+  }
+
+  const mappingEvidence = `Mapped path: ${parameter.sourcePath} (${parameter.mappingQuality}, ${parameter.confidence})`;
+  const mappingLimits: string[] = [];
+  if (parameter.mappingQuality !== 'exact') {
+    mappingLimits.push(`Mapping quality is "${parameter.mappingQuality}", so this recommendation is directionally reliable but not path-exact.`);
+  }
+  if (parameter.ambiguousMatches.length > 0) {
+    mappingLimits.push(
+      `Multiple garage paths matched this parameter: ${parameter.ambiguousMatches.join(', ')}.`,
+    );
+  }
+  if (parameter.confidence !== 'HIGH') {
+    mappingLimits.push(`Mapping confidence is ${parameter.confidence}. Verify the garage path before applying exact deltas.`);
+  }
+
+  const shouldDowngradeExactness = recommendation.exactness === 'exact'
+    && (parameter.mappingQuality !== 'exact' || parameter.ambiguousMatches.length > 0 || parameter.confidence !== 'HIGH');
+
+  return {
+    ...recommendation,
+    evidence: mergeUniqueStrings([...recommendation.evidence, mappingEvidence]),
+    exactness: shouldDowngradeExactness ? 'inferred' : recommendation.exactness,
+    blockedBy: mappingLimits.length > 0
+      ? mergeUniqueStrings([...(recommendation.blockedBy || []), ...mappingLimits])
+      : recommendation.blockedBy,
+  };
+}
+
+function finalizeRecommendations(
+  recommendations: DraftRecommendation[],
+  normalizedSetup: NormalizedSetup,
+): SetupRecommendation[] {
   if (recommendations.length === 0) {
     return [{
       id: 'all-clear',
@@ -1068,10 +1127,13 @@ function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupR
     }];
   }
 
-  const withPriority = recommendations.map((rec) => ({
-    ...rec,
-    priority: recommendationPriority(rec),
-  }));
+  const withPriority = recommendations.map((rec) => {
+    const mappingAware = applyMappingAwareness(rec, normalizedSetup);
+    return {
+      ...mappingAware,
+      priority: recommendationPriority(mappingAware),
+    };
+  });
 
   withPriority.sort((a, b) => {
     const bySeverity = severityWeight(a.severity) - severityWeight(b.severity);
@@ -1098,13 +1160,9 @@ function validateConstraints(
     }
 
     if (constraint.id === 'front-rh-floor') {
-      // Check if any recommendation would suggest raising front RH (impossible)
-      // This is more of an awareness constraint — the violation is informational
-      const frontRH = getNormalizedParameter(normalizedSetup, 'platform.frontPushrod');
-      if (frontRH) {
-        // Front RH at 30mm is the baseline — no violation per se, but note it
-        // Only generate violation if setup somehow has front RH below 30mm
-      }
+      // 30mm is a garage/setup-screen minimum only.
+      // Dynamic ride height at speed WILL drop below 30mm under aero load —
+      // that is normal and expected, not a violation.
     }
 
     if (constraint.id === 'min-cold-pressure') {
@@ -1841,7 +1899,7 @@ function buildRecommendations(args: {
     });
   }
 
-  return finalizeRecommendations(recommendations);
+  return finalizeRecommendations(recommendations, normalizedSetup);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1940,26 +1998,27 @@ export function analyzeSession(
     rideHeightData,
     dataQuality,
   });
-  const recommendations = buildRecommendations({
-    carProfile,
-    trackProfile,
-    normalizedSetup,
-    telemetryReasoning,
-    tyreTempData,
-    tyrePressureData,
-    tyreWearData,
-    engineTemps,
-    bottoming,
-    shockVelStats,
-    aids,
-    splitter,
-    rarb,
-    rideHeightData,
-    dataQuality,
-    validLapCount: validLaps.length,
-    conditioning,
-  });
-
+  const recommendations = ENABLE_RULE_ENGINE_RECOMMENDATIONS
+    ? buildRecommendations({
+        carProfile,
+        trackProfile,
+        normalizedSetup,
+        telemetryReasoning,
+        tyreTempData,
+        tyrePressureData,
+        tyreWearData,
+        engineTemps,
+        bottoming,
+        shockVelStats,
+        aids,
+        splitter,
+        rarb,
+        rideHeightData,
+        dataQuality,
+        validLapCount: validLaps.length,
+        conditioning,
+      })
+    : [];
   // Domain knowledge enrichment
   const constraintViolations = validateConstraints(normalizedSetup, carProfile);
   const physicsVersionNote = getPhysicsVersionNote();

@@ -21,7 +21,9 @@ export function SetupDump({ analysis }: Props) {
         )}
       </div>
       <button
+        type="button"
         onClick={() => setShowSetup(!showSetup)}
+        aria-pressed={showSetup}
         className="btn-primary text-[13px] px-5 py-2.5 rounded-lg mb-5"
       >
         {showSetup ? 'Hide Setup' : 'Show Full Setup'}

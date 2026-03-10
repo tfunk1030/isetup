@@ -124,7 +124,9 @@ export function ComparePanel() {
               <label className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Setup A</label>
               {analysis && (
                 <button
+                  type="button"
                   onClick={() => setUseSession(!useSession)}
+                  aria-pressed={useSession}
                   className={`inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
                     useSession
                       ? 'bg-[var(--color-green-dim)] text-[var(--color-green)] border-[var(--color-green)]/20'
@@ -174,6 +176,7 @@ export function ComparePanel() {
         )}
 
         <button
+          type="button"
           onClick={handleCompare}
           className="btn-primary w-full inline-flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl"
         >

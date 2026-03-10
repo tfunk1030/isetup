@@ -112,7 +112,9 @@ export function DiagnosePanel() {
           </div>
           <div className="flex items-end">
             <button
+              type="button"
               onClick={() => setIsWet(!isWet)}
+              aria-pressed={isWet}
               className={`inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-lg border transition-all cursor-pointer ${
                 isWet
                   ? 'bg-[var(--color-blue-dim)] text-[var(--color-blue)] border-[var(--color-blue)]/30'
@@ -132,7 +134,9 @@ export function DiagnosePanel() {
             {SYMPTOMS.map((s) => (
               <button
                 key={s.id}
+                type="button"
                 onClick={() => setSymptom(symptom === s.id ? null : s.id)}
+                aria-pressed={symptom === s.id}
                 className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
                   symptom === s.id
                     ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)] shadow-[0_0_12px_var(--color-accent-glow)]'
@@ -154,7 +158,9 @@ export function DiagnosePanel() {
               {PHASES.map((p) => (
                 <button
                   key={p.id}
+                  type="button"
                   onClick={() => setPhase(phase === p.id ? null : p.id)}
+                  aria-pressed={phase === p.id}
                   className={`flex-1 inline-flex items-center justify-center gap-1.5 text-xs py-2 px-3 rounded-lg border transition-all cursor-pointer ${
                     phase === p.id
                       ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)]'
@@ -173,7 +179,9 @@ export function DiagnosePanel() {
               {SPEEDS.map((s) => (
                 <button
                   key={s.id}
+                  type="button"
                   onClick={() => setSpeed(speed === s.id ? null : s.id)}
+                  aria-pressed={speed === s.id}
                   className={`flex-1 text-xs py-2 px-3 rounded-lg border transition-all cursor-pointer ${
                     speed === s.id
                       ? 'bg-[var(--color-accent-glow)] border-[var(--color-accent)] text-[var(--color-accent)]'
@@ -200,6 +208,7 @@ export function DiagnosePanel() {
 
         {/* Diagnose button */}
         <button
+          type="button"
           onClick={handleDiagnose}
           disabled={!hasInput}
           className={`w-full inline-flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl transition-all ${

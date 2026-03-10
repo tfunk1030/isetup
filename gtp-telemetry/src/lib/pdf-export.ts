@@ -64,21 +64,6 @@ export async function exportPDF(analysis: SessionAnalysis): Promise<void> {
     addSeparator();
   }
 
-  if (analysis.recommendations.length > 0) {
-    addHeader('Setup Recommendations');
-    for (const rec of analysis.recommendations.slice(0, 8)) {
-      addRow(
-        `${rec.severity} ${rec.category}`,
-        `${rec.title} (${rec.confidence})`
-      );
-      addRow('Action', rec.action);
-      if (rec.evidence[0]) {
-        addRow('Evidence', rec.evidence[0]);
-      }
-    }
-    addSeparator();
-  }
-
   // Lap Times
   addHeader('Lap Times');
   const bestLap = analysis.lapTimes.find((l) => Math.abs(l.time - analysis.bestTime) < 0.01);

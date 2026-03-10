@@ -177,11 +177,7 @@ function run(): void {
   }, baseline.parserWarnings);
 
   assert(!('error' in baselineResult), 'baseline analysis should succeed');
-  assert(baselineResult.recommendations.length > 0, 'baseline should generate recommendations');
-  assert(
-    baselineResult.recommendations.some((r) => r.category === 'PLATFORM'),
-    'baseline should include a platform recommendation'
-  );
+  assert(baselineResult.recommendations.length === 0, 'baseline should not generate rule-engine recommendations in AI-only mode');
 
   const lowCoverage = buildFixture({
     dropChannels: ['LFtempL', 'LFtempM', 'LFtempR', 'RFtempL', 'RFtempM', 'RFtempR', 'LRtempL', 'LRtempM', 'LRtempR', 'RRtempL', 'RRtempM', 'RRtempR'],
@@ -197,10 +193,7 @@ function run(): void {
   const highThermal = buildFixture({ hotWaterC: 118, hotOilC: 137 });
   const highThermalResult = analyzeSession(highThermal.parsed, undefined, undefined, []);
   assert(!('error' in highThermalResult), 'high thermal analysis should succeed');
-  assert(
-    highThermalResult.recommendations.some((r) => r.id === 'engine-temperature-control'),
-    'high thermal case should emit engine temperature recommendation'
-  );
+  assert(highThermalResult.recommendations.length === 0, 'high thermal analysis should not emit rule-engine recommendations in AI-only mode');
 
   console.log('analysis-regression: all checks passed');
 }

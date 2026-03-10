@@ -5,6 +5,7 @@ import { DropZone } from './components/upload/DropZone';
 import { SessionHeader } from './components/dashboard/SessionHeader';
 import { TabBar } from './components/shared/TabBar';
 import { TABS } from './lib/constants';
+import { getTabId, getTabPanelId } from './lib/tab-a11y';
 import { Card } from './components/shared/Card';
 import { MetricRow } from './components/shared/MetricRow';
 import {
@@ -53,9 +54,6 @@ const RARBAnalysis = lazy(() =>
 const SetupDump = lazy(() =>
   import('./components/dashboard/SetupDump').then((m) => ({ default: m.SetupDump }))
 );
-const SetupRecommendationsPanel = lazy(() =>
-  import('./components/dashboard/SetupRecommendationsPanel').then((m) => ({ default: m.SetupRecommendationsPanel }))
-);
 const AIRecommendationAssistant = lazy(() =>
   import('./components/dashboard/AIRecommendationAssistant').then((m) => ({ default: m.AIRecommendationAssistant }))
 );
@@ -88,86 +86,92 @@ function Dashboard() {
 
       <div className="p-6 max-w-[1440px] mx-auto">
         <Suspense fallback={<LoadingFallback />}>
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              <SetupRecommendationsPanel analysis={a} />
-              <AIRecommendationAssistant analysis={a} />
-              <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
-                <LapTimesChart analysis={a} />
+          <section
+            role="tabpanel"
+            id={getTabPanelId(activeTab)}
+            aria-labelledby={getTabId(activeTab)}
+            tabIndex={0}
+          >
+            {activeTab === 'overview' && (
+              <div className="space-y-6">
+                <AIRecommendationAssistant analysis={a} />
+                <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
+                  <LapTimesChart analysis={a} />
 
-                <Card title="Session" icon={<ClipboardList className="w-4 h-4" />}>
-                  <MetricRow label="Air Temp" value={a.header.airTemp} />
-                  <MetricRow label="Track Temp" value={a.header.trackTemp} />
-                  <MetricRow label="Fuel Start" value={a.fuel.start?.toFixed(1)} unit="L" />
-                  <MetricRow label="Fuel/Lap" value={a.fuel.perLap?.toFixed(2)} unit="L" />
-                  <MetricRow label="Range" value={`~${Math.floor(a.fuel.range)}`} unit="laps" />
-                </Card>
+                  <Card title="Session" icon={<ClipboardList className="w-4 h-4" />}>
+                    <MetricRow label="Air Temp" value={a.header.airTemp} />
+                    <MetricRow label="Track Temp" value={a.header.trackTemp} />
+                    <MetricRow label="Fuel Start" value={a.fuel.start?.toFixed(1)} unit="L" />
+                    <MetricRow label="Fuel/Lap" value={a.fuel.perLap?.toFixed(2)} unit="L" />
+                    <MetricRow label="Range" value={`~${Math.floor(a.fuel.range)}`} unit="laps" />
+                  </Card>
 
-                <Card title="Platform Safety" icon={<Shield className="w-4 h-4" />}>
-                  <MetricRow label="Clean Bottoming" value={a.bottoming.clean} status={a.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
-                  <MetricRow label="Kerb Bottoming" value={a.bottoming.kerb} status="OK" />
-                  {a.shockVelStats.RR && (
-                    <>
-                      <MetricRow label="RR Peak Vel" value={a.shockVelStats.RR.peak.toFixed(0)} unit="mm/s" status={a.shockVelStats.RR.peak > 700 ? 'HOT' : 'OK'} />
-                      <MetricRow label="RF Peak Vel" value={(a.shockVelStats.RF?.peak || 0).toFixed(0)} unit="mm/s" status={(a.shockVelStats.RF?.peak || 0) > 700 ? 'HOT' : 'OK'} />
-                    </>
-                  )}
-                </Card>
+                  <Card title="Platform Safety" icon={<Shield className="w-4 h-4" />}>
+                    <MetricRow label="Clean Bottoming" value={a.bottoming.clean} status={a.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
+                    <MetricRow label="Kerb Bottoming" value={a.bottoming.kerb} status="OK" />
+                    {a.shockVelStats.RR && (
+                      <>
+                        <MetricRow label="RR Peak Vel" value={a.shockVelStats.RR.peak.toFixed(0)} unit="mm/s" status={a.shockVelStats.RR.peak > 700 ? 'HOT' : 'OK'} />
+                        <MetricRow label="RF Peak Vel" value={(a.shockVelStats.RF?.peak || 0).toFixed(0)} unit="mm/s" status={(a.shockVelStats.RF?.peak || 0) > 700 ? 'HOT' : 'OK'} />
+                      </>
+                    )}
+                  </Card>
 
-                <Card title="G-Force Envelope" icon={<Zap className="w-4 h-4" />}>
-                  <MetricRow label="Peak Lateral" value={a.peakLatG.toFixed(2)} unit="g" />
-                  <MetricRow label="Peak Braking" value={a.peakBrakeG.toFixed(2)} unit="g" />
-                  <MetricRow label="Peak Accel" value={a.peakAccelG.toFixed(2)} unit="g" />
-                </Card>
+                  <Card title="G-Force Envelope" icon={<Zap className="w-4 h-4" />}>
+                    <MetricRow label="Peak Lateral" value={a.peakLatG.toFixed(2)} unit="g" />
+                    <MetricRow label="Peak Braking" value={a.peakBrakeG.toFixed(2)} unit="g" />
+                    <MetricRow label="Peak Accel" value={a.peakAccelG.toFixed(2)} unit="g" />
+                  </Card>
 
-                <Card title="Driver Aids" icon={<SlidersHorizontal className="w-4 h-4" />}>
-                  {Object.entries(a.aids).map(([name, d]) => (
-                    <MetricRow key={name} label={name} value={d.avg.toFixed(1)} status={d.constant ? 'OK' : 'HIGH'} />
-                  ))}
-                </Card>
+                  <Card title="Driver Aids" icon={<SlidersHorizontal className="w-4 h-4" />}>
+                    {Object.entries(a.aids).map(([name, d]) => (
+                      <MetricRow key={name} label={name} value={d.avg.toFixed(1)} status={d.constant ? 'OK' : 'HIGH'} />
+                    ))}
+                  </Card>
 
-                <ConditioningTrend analysis={a} />
+                  <ConditioningTrend analysis={a} />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {activeTab === 'tyres' && (
-            <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
-              <TyreTempsPanel analysis={a} />
-              <TyrePressuresChart analysis={a} />
-              <TyreWearPanel analysis={a} />
-            </div>
-          )}
+            {activeTab === 'tyres' && (
+              <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
+                <TyreTempsPanel analysis={a} />
+                <TyrePressuresChart analysis={a} />
+                <TyreWearPanel analysis={a} />
+              </div>
+            )}
 
-          {activeTab === 'platform' && (
-            <div className="grid gap-5" style={{ gridTemplateColumns: '1fr' }}>
-              <RideHeightScatter analysis={a} />
-              <SplitterAnalysis analysis={a} />
-              <ShockVelocityPanel analysis={a} />
-            </div>
-          )}
+            {activeTab === 'platform' && (
+              <div className="grid gap-5" style={{ gridTemplateColumns: '1fr' }}>
+                <RideHeightScatter analysis={a} />
+                <SplitterAnalysis analysis={a} />
+                <ShockVelocityPanel analysis={a} />
+              </div>
+            )}
 
-          {activeTab === 'dynamics' && (
-            <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}>
-              <GForceScatter analysis={a} />
-              <DriverAidsPanel analysis={a} />
-              <RARBAnalysis analysis={a} />
-              <EngineTempsPanel analysis={a} />
-              <FuelPanel analysis={a} />
-            </div>
-          )}
+            {activeTab === 'dynamics' && (
+              <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}>
+                <GForceScatter analysis={a} />
+                <DriverAidsPanel analysis={a} />
+                <RARBAnalysis analysis={a} />
+                <EngineTempsPanel analysis={a} />
+                <FuelPanel analysis={a} />
+              </div>
+            )}
 
-          {activeTab === 'diagnose' && (
-            <DiagnosePanel />
-          )}
+            {activeTab === 'diagnose' && (
+              <DiagnosePanel />
+            )}
 
-          {activeTab === 'compare' && (
-            <ComparePanel />
-          )}
+            {activeTab === 'compare' && (
+              <ComparePanel />
+            )}
 
-          {activeTab === 'setup' && (
-            <SetupDump analysis={a} />
-          )}
+            {activeTab === 'setup' && (
+              <SetupDump analysis={a} />
+            )}
+          </section>
         </Suspense>
       </div>
     </div>

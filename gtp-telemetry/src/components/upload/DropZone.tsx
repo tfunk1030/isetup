@@ -5,14 +5,18 @@ import { useSessionStore } from '../../store/session-store';
 export function DropZone() {
   const { loading, progress, error, loadFile } = useSessionStore();
   const [dragOver, setDragOver] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
     (file: File) => {
+      setLocalError(null);
       if (!file.name.toLowerCase().endsWith('.ibt')) {
+        setLocalError('Unsupported file type. Please upload an iRacing .ibt telemetry file.');
         return;
       }
       if (file.size < 1024) {
+        setLocalError('File is too small to be a valid .ibt telemetry file.');
         return;
       }
       loadFile(file);
@@ -59,16 +63,32 @@ export function DropZone() {
               ? 'border-2 border-[var(--color-accent)] bg-[var(--color-accent-glow)] shadow-[0_0_40px_var(--color-accent-glow)]'
               : 'border-2 border-dashed border-[var(--color-card-border)] hover:border-[var(--color-card-border-hover)] hover:bg-[var(--color-card)]'
           }`}
+          role="button"
+          tabIndex={0}
+          aria-label="Upload iRacing telemetry file"
+          aria-disabled={loading}
           onDragOver={(e) => {
             e.preventDefault();
             setDragOver(true);
           }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
-          onClick={() => fileRef.current?.click()}
+          onClick={() => {
+            if (loading) return;
+            setLocalError(null);
+            fileRef.current?.click();
+          }}
+          onKeyDown={(e) => {
+            if (loading) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setLocalError(null);
+              fileRef.current?.click();
+            }
+          }}
         >
           {loading ? (
-            <div>
+            <div role="status" aria-live="polite" aria-atomic="true">
               <div className="text-[var(--color-accent)] text-lg font-bold mb-3">
                 Analyzing...
               </div>
@@ -97,12 +117,17 @@ export function DropZone() {
             accept=".ibt"
             onChange={handleChange}
             className="hidden"
+            disabled={loading}
           />
         </div>
 
-        {error && (
-          <p className="text-[var(--color-red)] text-sm mb-4 px-4 py-3 rounded-xl bg-[var(--color-red-dim)] border border-[var(--color-red)]/20">
-            {error}
+        {(localError || error) && (
+          <p
+            role="alert"
+            aria-live="assertive"
+            className="text-[var(--color-red)] text-sm mb-4 px-4 py-3 rounded-xl bg-[var(--color-red-dim)] border border-[var(--color-red)]/20"
+          >
+            {localError || error}
           </p>
         )}
 
