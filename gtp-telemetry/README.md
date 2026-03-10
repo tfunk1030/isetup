@@ -61,7 +61,11 @@ VITE_GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 VITE_ANTHROPIC_API_KEY=your_anthropic_key
 VITE_OPUS_MODEL=claude-opus-4-6
 VITE_ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
+VITE_OPENAI_API_KEY=your_openai_key
+VITE_OPENAI_MODEL=gpt-5.4
 ```
+
+Note: this app is browser-only. Direct Anthropic calls from the browser may fail with CORS/network errors in some environments. If that happens, run Gemini-only mode (omit `VITE_ANTHROPIC_API_KEY`) or route Anthropic through your own backend proxy.
 
 If one model key is configured, it runs single-model AI mode.  
 If both keys are configured, it runs dual-model consensus mode.  

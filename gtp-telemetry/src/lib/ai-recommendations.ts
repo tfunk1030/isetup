@@ -17,6 +17,10 @@ const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1bet
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
 const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
 const DEFAULT_OPUS_MODEL = 'claude-opus-4-6';
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-5.4';
+const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
 
 interface ModelBrief {
   summary: string;
@@ -32,9 +36,41 @@ interface ModelResult {
   brief: ModelBrief;
 }
 
+interface ProviderConfig {
+  geminiKey?: string;
+  anthropicKey?: string;
+  openRouterKey?: string;
+  openAIKey?: string;
+}
+
 function getEnv(name: string): string | undefined {
   const raw = (import.meta.env as Record<string, unknown>)[name];
   return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : undefined;
+}
+
+function getProviderConfig(): ProviderConfig {
+  return {
+    geminiKey: getEnv('VITE_GEMINI_API_KEY'),
+    anthropicKey: getEnv('VITE_ANTHROPIC_API_KEY'),
+    openRouterKey: getEnv('VITE_OPENROUTER_API_KEY'),
+    openAIKey: getEnv('VITE_OPENAI_API_KEY'),
+  };
+}
+
+function isLikelyGeminiApiKey(key: string): boolean {
+  return /^AIza[0-9A-Za-z\-_]{20,}$/.test(key);
+}
+
+function isLikelyAnthropicApiKey(key: string): boolean {
+  return /^sk-ant-/.test(key);
+}
+
+function isLikelyOpenRouterApiKey(key: string): boolean {
+  return /^sk-or-v1-/.test(key);
+}
+
+function isLikelyOpenAIApiKey(key: string): boolean {
+  return /^sk-(proj-)?[A-Za-z0-9\-_]{20,}$/.test(key);
 }
 
 function extractJsonObject(raw: string): string {
@@ -242,14 +278,35 @@ function buildPrompt(analysis: SessionAnalysis): string {
 }
 
 export function hasAIRecommendationConfig(): boolean {
-  return Boolean(getEnv('VITE_GEMINI_API_KEY') || getEnv('VITE_ANTHROPIC_API_KEY'));
+  const {
+    geminiKey,
+    anthropicKey,
+    openRouterKey,
+    openAIKey,
+  } = getProviderConfig();
+  return Boolean(
+    (geminiKey && isLikelyGeminiApiKey(geminiKey))
+    || (anthropicKey && isLikelyAnthropicApiKey(anthropicKey))
+    || (openRouterKey && isLikelyOpenRouterApiKey(openRouterKey))
+    || (openAIKey && isLikelyOpenAIApiKey(openAIKey))
+  );
 }
 
 export function getAIRecommendationMode(): 'unconfigured' | 'single-model' | 'dual-model' {
-  const hasGemini = Boolean(getEnv('VITE_GEMINI_API_KEY'));
-  const hasAnthropic = Boolean(getEnv('VITE_ANTHROPIC_API_KEY'));
-  if (hasGemini && hasAnthropic) return 'dual-model';
-  if (hasGemini || hasAnthropic) return 'single-model';
+  const {
+    geminiKey,
+    anthropicKey,
+    openRouterKey,
+    openAIKey,
+  } = getProviderConfig();
+  const enabledCount = [
+    geminiKey && isLikelyGeminiApiKey(geminiKey),
+    anthropicKey && isLikelyAnthropicApiKey(anthropicKey),
+    openRouterKey && isLikelyOpenRouterApiKey(openRouterKey),
+    openAIKey && isLikelyOpenAIApiKey(openAIKey),
+  ].filter(Boolean).length;
+  if (enabledCount >= 2) return 'dual-model';
+  if (enabledCount === 1) return 'single-model';
   return 'unconfigured';
 }
 
@@ -310,9 +367,22 @@ function parseModelBrief(rawContent: string, analysis: SessionAnalysis): ModelBr
   };
 }
 
+async function readResponseBodySnippet(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    if (!text) return '';
+    return text.slice(0, 280);
+  } catch {
+    return '';
+  }
+}
+
 async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
   const apiKey = getEnv('VITE_GEMINI_API_KEY');
   if (!apiKey) return null;
+  if (!isLikelyGeminiApiKey(apiKey)) {
+    return null;
+  }
   const baseUrl = (getEnv('VITE_GEMINI_BASE_URL') || DEFAULT_GEMINI_BASE_URL).replace(/\/$/, '');
   const model = getEnv('VITE_GEMINI_MODEL') || DEFAULT_GEMINI_MODEL;
 
@@ -333,7 +403,9 @@ async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<M
   });
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed (${response.status}).`);
+    const responseBodySnippet = await readResponseBodySnippet(response);
+    const detail = responseBodySnippet ? ` ${responseBodySnippet}` : '';
+    throw new Error(`Gemini request failed (${response.status}).${detail}`);
   }
 
   const data = await response.json() as {
@@ -350,27 +422,40 @@ async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<M
 async function queryOpus(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
   const apiKey = getEnv('VITE_ANTHROPIC_API_KEY');
   if (!apiKey) return null;
+  if (!isLikelyAnthropicApiKey(apiKey)) {
+    return null;
+  }
   const baseUrl = (getEnv('VITE_ANTHROPIC_BASE_URL') || DEFAULT_ANTHROPIC_BASE_URL).replace(/\/$/, '');
   const model = getEnv('VITE_OPUS_MODEL') || DEFAULT_OPUS_MODEL;
 
-  const response = await fetch(`${baseUrl}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 1400,
-      temperature: 0.2,
-      system: 'You are a meticulous motorsport setup analyst.',
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1400,
+        temperature: 0.2,
+        system: 'You are a meticulous motorsport setup analyst.',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+  } catch (error) {
+    const reason = stringifyError(error);
+    throw new Error(
+      `Opus network request failed (${reason}). This usually means the browser cannot reach Anthropic directly (CORS/network). Use a backend proxy for Anthropic, or remove VITE_ANTHROPIC_API_KEY to run Gemini-only mode.`
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`Opus request failed (${response.status}).`);
+    const responseBodySnippet = await readResponseBodySnippet(response);
+    const detail = responseBodySnippet ? ` ${responseBodySnippet}` : '';
+    throw new Error(`Opus request failed (${response.status}).${detail}`);
   }
 
   const data = await response.json() as {
@@ -381,6 +466,86 @@ async function queryOpus(prompt: string, analysis: SessionAnalysis): Promise<Mod
   return {
     modelName: model,
     brief: parseModelBrief(text, analysis),
+  };
+}
+
+async function queryOpenRouter(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
+  const apiKey = getEnv('VITE_OPENROUTER_API_KEY');
+  if (!apiKey) return null;
+  if (!isLikelyOpenRouterApiKey(apiKey)) return null;
+  const baseUrl = (getEnv('VITE_OPENROUTER_BASE_URL') || DEFAULT_OPENROUTER_BASE_URL).replace(/\/$/, '');
+  const model = getEnv('VITE_OPENROUTER_MODEL') || DEFAULT_OPENROUTER_MODEL;
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: 'You are a meticulous motorsport setup analyst.' },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const responseBodySnippet = await readResponseBodySnippet(response);
+    const detail = responseBodySnippet ? ` ${responseBodySnippet}` : '';
+    throw new Error(`OpenRouter request failed (${response.status}).${detail}`);
+  }
+
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content ?? '';
+
+  return {
+    modelName: `openrouter:${model}`,
+    brief: parseModelBrief(content, analysis),
+  };
+}
+
+async function queryOpenAI(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
+  const apiKey = getEnv('VITE_OPENAI_API_KEY');
+  if (!apiKey) return null;
+  if (!isLikelyOpenAIApiKey(apiKey)) return null;
+  const baseUrl = (getEnv('VITE_OPENAI_BASE_URL') || DEFAULT_OPENAI_BASE_URL).replace(/\/$/, '');
+  const model = getEnv('VITE_OPENAI_MODEL') || DEFAULT_OPENAI_MODEL;
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: 'You are a meticulous motorsport setup analyst.' },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const responseBodySnippet = await readResponseBodySnippet(response);
+    const detail = responseBodySnippet ? ` ${responseBodySnippet}` : '';
+    throw new Error(`OpenAI request failed (${response.status}).${detail}`);
+  }
+
+  const data = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content ?? '';
+
+  return {
+    modelName: `openai:${model}`,
+    brief: parseModelBrief(content, analysis),
   };
 }
 
@@ -448,8 +613,10 @@ function stringifyError(error: unknown): string {
   return 'Unknown provider error.';
 }
 
-function buildNoResultError(settled: PromiseSettledResult<ModelResult | null>[]): Error {
-  const providers = ['Gemini', 'Opus'];
+function buildNoResultError(
+  settled: PromiseSettledResult<ModelResult | null>[],
+  providers: string[]
+): Error {
   const failureMessages = settled
     .map((result, index) => {
       if (result.status !== 'rejected') return null;
@@ -532,18 +699,48 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
 
 export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<AISetupBrief> {
   const prompt = buildPrompt(analysis);
-  if (!hasAIRecommendationConfig()) {
-    throw new Error('AI analysis is not configured. Set VITE_GEMINI_API_KEY and/or VITE_ANTHROPIC_API_KEY.');
+  const {
+    geminiKey,
+    anthropicKey,
+    openRouterKey,
+    openAIKey,
+  } = getProviderConfig();
+  const hasGemini = Boolean(geminiKey && isLikelyGeminiApiKey(geminiKey));
+  const hasAnthropic = Boolean(anthropicKey && isLikelyAnthropicApiKey(anthropicKey));
+  const hasOpenRouter = Boolean(openRouterKey && isLikelyOpenRouterApiKey(openRouterKey));
+  const hasOpenAI = Boolean(openAIKey && isLikelyOpenAIApiKey(openAIKey));
+  if (!hasGemini && !hasAnthropic && !hasOpenRouter && !hasOpenAI) {
+    const invalidNotes: string[] = [];
+    if (geminiKey && !isLikelyGeminiApiKey(geminiKey)) {
+      invalidNotes.push('VITE_GEMINI_API_KEY must be a Google AI key that starts with "AIza".');
+    }
+    if (anthropicKey && !isLikelyAnthropicApiKey(anthropicKey)) {
+      invalidNotes.push('VITE_ANTHROPIC_API_KEY must start with "sk-ant-".');
+    }
+    if (openRouterKey && !isLikelyOpenRouterApiKey(openRouterKey)) {
+      invalidNotes.push('VITE_OPENROUTER_API_KEY must start with "sk-or-v1-".');
+    }
+    if (openAIKey && !isLikelyOpenAIApiKey(openAIKey)) {
+      invalidNotes.push('VITE_OPENAI_API_KEY must start with "sk-".');
+    }
+    const suffix = invalidNotes.length > 0 ? ` ${invalidNotes.join(' ')}` : '';
+    throw new Error(`AI analysis is not configured with a valid provider key.${suffix}`);
   }
 
-  const settled = await Promise.allSettled([queryGemini(prompt, analysis), queryOpus(prompt, analysis)]);
+  const providerRuns = [
+    { name: 'Gemini', run: queryGemini(prompt, analysis) },
+    { name: 'Opus', run: queryOpus(prompt, analysis) },
+    { name: 'OpenRouter', run: queryOpenRouter(prompt, analysis) },
+    { name: 'OpenAI', run: queryOpenAI(prompt, analysis) },
+  ];
+  const settled = await Promise.allSettled(providerRuns.map((provider) => provider.run));
   const successful: ModelResult[] = settled
     .filter((r): r is PromiseFulfilledResult<ModelResult | null> => r.status === 'fulfilled')
     .map((r) => r.value)
     .filter((v): v is ModelResult => v != null);
 
   if (successful.length === 0) {
-    throw buildNoResultError(settled);
+    throw buildNoResultError(settled, providerRuns.map((provider) => provider.name));
   }
 
   return buildConsensusBrief(successful, analysis);

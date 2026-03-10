@@ -124,13 +124,13 @@ export function AIRecommendationAssistant({ analysis }: Props) {
           {loading ? 'Analyzing...' : 'Re-run AI Analysis'}
         </button>
         <span className="text-xs text-[var(--color-text-muted)]">
-          {mode === 'dual-model' ? 'Mode: Gemini + Opus consensus' : mode === 'single-model' ? 'Mode: single-provider AI' : 'Mode: unconfigured'}
+          {mode === 'dual-model' ? 'Mode: multi-provider consensus' : mode === 'single-model' ? 'Mode: single-provider AI' : 'Mode: unconfigured'}
         </span>
       </div>
 
       {!configured && (
         <p className="mb-4 text-xs text-[var(--color-text-muted)]">
-          Configure `VITE_GEMINI_API_KEY` and/or `VITE_ANTHROPIC_API_KEY` to enable AI analysis.
+          Configure a valid AI key (`VITE_GEMINI_API_KEY`, `VITE_ANTHROPIC_API_KEY`, `VITE_OPENROUTER_API_KEY`, or `VITE_OPENAI_API_KEY`) to enable AI analysis.
         </p>
       )}
 
