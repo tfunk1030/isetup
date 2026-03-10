@@ -15,12 +15,14 @@ import {
 
 const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
-const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
+const DEFAULT_GEMINI_NATIVE_BASE_URL = '/api/google/v1beta';
+const DEFAULT_ANTHROPIC_BASE_URL = '/api/anthropic/v1';
 const DEFAULT_OPUS_MODEL = 'claude-opus-4-6';
-const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_OPENROUTER_BASE_URL = '/api/openrouter/api/v1';
 const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-5.4';
-const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const DEFAULT_OPENAI_BASE_URL = '/api/openai/v1';
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
+const geminiModelResolutionCache = new Map<string, string>();
 
 interface ModelBrief {
   summary: string;
@@ -36,11 +38,37 @@ interface ModelResult {
   brief: ModelBrief;
 }
 
+export interface AIProviderDebugEntry {
+  provider: string;
+  configured: boolean;
+  keyValid: boolean;
+  model: string;
+  baseUrl: string;
+  status: 'success' | 'error' | 'skipped';
+  durationMs: number;
+  error?: string;
+  recommendations?: number;
+}
+
+export interface AIProviderDebugReport {
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  providers: AIProviderDebugEntry[];
+}
+
 interface ProviderConfig {
   geminiKey?: string;
   anthropicKey?: string;
   openRouterKey?: string;
   openAIKey?: string;
+}
+
+let lastAIProviderDebugReport: AIProviderDebugReport | null = null;
+const inFlightBriefByKey = new Map<string, Promise<AISetupBrief>>();
+
+export function getLastAIProviderDebugReport(): AIProviderDebugReport | null {
+  return lastAIProviderDebugReport;
 }
 
 function getEnv(name: string): string | undefined {
@@ -55,6 +83,44 @@ function getProviderConfig(): ProviderConfig {
     openRouterKey: getEnv('VITE_OPENROUTER_API_KEY'),
     openAIKey: getEnv('VITE_OPENAI_API_KEY'),
   };
+}
+
+function isAIDebugEnabled(): boolean {
+  const value = getEnv('VITE_AI_DEBUG');
+  if (!value) return false;
+  return value === '1' || value.toLowerCase() === 'true';
+}
+
+function isBrowserRuntime(): boolean {
+  return typeof window !== 'undefined';
+}
+
+function normalizeProviderBaseUrl(baseUrl: string, provider: 'anthropic' | 'openai' | 'openrouter' | 'google-openai' | 'google-native'): string {
+  const normalized = baseUrl.replace(/\/$/, '');
+  if (isBrowserRuntime()) {
+    if (provider === 'anthropic') return '/api/anthropic/v1';
+    if (provider === 'openai') return '/api/openai/v1';
+    if (provider === 'openrouter') return '/api/openrouter/api/v1';
+    if (provider === 'google-openai') return '/api/google/v1beta/openai';
+    if (provider === 'google-native') return '/api/google/v1beta';
+  }
+  if (!isBrowserRuntime()) return normalized;
+  if (provider === 'anthropic' && /(^https?:\/\/)?api\.anthropic\.com\/?/i.test(normalized)) {
+    return '/api/anthropic/v1';
+  }
+  if (provider === 'openai' && /(^https?:\/\/)?api\.openai\.com\/?/i.test(normalized)) {
+    return '/api/openai/v1';
+  }
+  if (provider === 'openrouter' && /(^https?:\/\/)?openrouter\.ai\/?/i.test(normalized)) {
+    return '/api/openrouter/api/v1';
+  }
+  if (provider === 'google-openai' && /(^https?:\/\/)?generativelanguage\.googleapis\.com\/?/i.test(normalized)) {
+    return '/api/google/v1beta/openai';
+  }
+  if (provider === 'google-native' && /(^https?:\/\/)?generativelanguage\.googleapis\.com\/?/i.test(normalized)) {
+    return '/api/google/v1beta';
+  }
+  return normalized;
 }
 
 function isLikelyGeminiApiKey(key: string): boolean {
@@ -85,6 +151,39 @@ function extractJsonObject(raw: string): string {
   if (start >= 0 && end > start) return trimmed.slice(start, end + 1).trim();
 
   throw new Error('No JSON object in model output.');
+}
+
+function repairLikelyJson(raw: string): string {
+  return raw
+    .replace(/\u201c|\u201d/g, '"')
+    .replace(/\u2018|\u2019/g, "'")
+    .replace(/,\s*([}\]])/g, '$1')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
+}
+
+function parseModelBriefOrFallback(rawContent: string, analysis: SessionAnalysis, provider: string): ModelBrief {
+  try {
+    return parseModelBrief(rawContent, analysis);
+  } catch (firstError) {
+    try {
+      const repaired = repairLikelyJson(rawContent);
+      return parseModelBrief(repaired, analysis);
+    } catch (secondError) {
+      const reason = stringifyError(secondError || firstError);
+      const plain = rawContent
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return {
+        summary: plain.slice(0, 240) || `${provider} returned a non-JSON response.`,
+        recommendations: [],
+        watchItems: [`${provider} response could not be parsed as strict JSON.`],
+        confidenceNote: `${provider} output parsing failed; fallback text summary used.`,
+        reasoning: [],
+        assumptions: [`Parser error: ${reason}`],
+      };
+    }
+  }
 }
 
 function parseConfidence(value: unknown): ConfidenceLevel {
@@ -230,8 +329,9 @@ function buildPrompt(analysis: SessionAnalysis): string {
   // Build domain knowledge context
   const domainContext: string[] = [];
 
-  // Sim constraints
-  domainContext.push(`SIM CONSTRAINTS: ${JSON.stringify(SIM_CONSTRAINTS.map(c => ({ id: c.id, param: c.parameter, limit: c.limit, unit: c.unit })))}`);
+  // Sim constraints — include enforcement type so the model knows which limits apply only in the garage
+  domainContext.push(`SIM CONSTRAINTS: ${JSON.stringify(SIM_CONSTRAINTS.map(c => ({ id: c.id, param: c.parameter, limit: c.limit, unit: c.unit, enforcement: c.enforcementType })))}`);
+  domainContext.push('IMPORTANT: The front-rh-floor constraint (30mm) is a GARAGE/SETUP-SCREEN minimum only. Dynamic ride height and splitter clearance WILL drop below 30mm at speed under aero load — this is normal and expected, NOT a violation. Only flag dynamic ride height if there is excessive bottoming (floor strikes), not simply because the value is below 30mm.');
 
   // Impact hierarchy
   domainContext.push(`IMPACT HIERARCHY (highest first): ${IMPACT_HIERARCHY.map(h => h.description).join(' > ')}`);
@@ -318,6 +418,36 @@ function normalizeText(value: string): string {
     .trim();
 }
 
+function canonicalModelIdentity(modelName: string): string {
+  let normalized = modelName.trim();
+
+  const resolvedMatch = normalized.match(/\(resolved as ([^)]+)\)/i);
+  if (resolvedMatch?.[1]) normalized = resolvedMatch[1].trim();
+  const viaMatch = normalized.match(/\(via ([^)]+)\)/i);
+  if (viaMatch?.[1]) normalized = viaMatch[1].trim();
+
+  if (normalized.startsWith('openrouter:')) normalized = normalized.replace(/^openrouter:/, '');
+  if (normalized.startsWith('openai:')) normalized = normalized.replace(/^openai:/, 'openai/');
+  if (normalized.startsWith('anthropic:')) normalized = normalized.replace(/^anthropic:/, 'anthropic/');
+  if (normalized.startsWith('google:')) normalized = normalized.replace(/^google:/, 'google/');
+
+  return normalizeText(normalized);
+}
+
+function areConfiguredModelsEquivalent(first: string, second: string): boolean {
+  return canonicalModelIdentity(first) === canonicalModelIdentity(second);
+}
+
+function buildAnalysisRunKey(analysis: SessionAnalysis): string {
+  return [
+    analysis.header.car,
+    analysis.header.track,
+    analysis.header.samples,
+    analysis.validLaps.length,
+    Number.isFinite(analysis.bestTime) ? analysis.bestTime.toFixed(4) : 'na',
+  ].join('|');
+}
+
 function parseModelBrief(rawContent: string, analysis: SessionAnalysis): ModelBrief {
   const jsonText = extractJsonObject(rawContent);
   const parsed = JSON.parse(jsonText) as Partial<ModelBrief>;
@@ -367,6 +497,61 @@ function parseModelBrief(rawContent: string, analysis: SessionAnalysis): ModelBr
   };
 }
 
+function finishProviderDebugReport(report: AIProviderDebugReport): AIProviderDebugReport {
+  const completedAt = new Date();
+  return {
+    ...report,
+    completedAt: completedAt.toISOString(),
+    durationMs: completedAt.getTime() - new Date(report.startedAt).getTime(),
+  };
+}
+
+function pushDebugEntry(
+  report: AIProviderDebugReport,
+  entry: AIProviderDebugEntry
+): void {
+  report.providers.push(entry);
+  if (isAIDebugEnabled()) {
+    console.info('[AI Debug]', entry);
+  }
+}
+
+async function runProviderWithDebug(
+  report: AIProviderDebugReport,
+  context: Omit<AIProviderDebugEntry, 'status' | 'durationMs'>,
+  run: () => Promise<ModelResult | null>
+): Promise<ModelResult | null> {
+  const startedAt = performance.now();
+  try {
+    const result = await run();
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (!result) {
+      pushDebugEntry(report, {
+        ...context,
+        status: 'skipped',
+        durationMs,
+      });
+      return null;
+    }
+    pushDebugEntry(report, {
+      ...context,
+      status: 'success',
+      durationMs,
+      recommendations: result.brief.recommendations.length,
+    });
+    return result;
+  } catch (error) {
+    const durationMs = Math.round(performance.now() - startedAt);
+    pushDebugEntry(report, {
+      ...context,
+      status: 'error',
+      durationMs,
+      error: stringifyError(error),
+    });
+    throw error;
+  }
+}
+
 async function readResponseBodySnippet(response: Response): Promise<string> {
   try {
     const text = await response.text();
@@ -377,15 +562,69 @@ async function readResponseBodySnippet(response: Response): Promise<string> {
   }
 }
 
+async function resolveGeminiModel(
+  requestedModel: string,
+  nativeBaseUrl: string,
+  apiKey: string
+): Promise<string> {
+  const cacheKey = `${nativeBaseUrl}::${requestedModel}`;
+  const cached = geminiModelResolutionCache.get(cacheKey);
+  if (cached) return cached;
+
+  const modelCandidates = [
+    requestedModel,
+    `${requestedModel}-preview`,
+    requestedModel.endsWith('-pro') ? `${requestedModel}-preview` : '',
+    requestedModel.endsWith('-flash') ? `${requestedModel}-preview` : '',
+  ].filter(Boolean);
+
+  try {
+    const response = await fetch(
+      `${nativeBaseUrl}/models?key=${encodeURIComponent(apiKey)}`,
+      { method: 'GET' }
+    );
+    if (!response.ok) {
+      geminiModelResolutionCache.set(cacheKey, requestedModel);
+      return requestedModel;
+    }
+    const data = await response.json() as { models?: Array<{ name?: string }> };
+    const availableModels = new Set(
+      (data.models || [])
+        .map((model) => (typeof model.name === 'string' ? model.name.replace(/^models\//, '') : ''))
+        .filter(Boolean)
+    );
+
+    for (const candidate of modelCandidates) {
+      if (availableModels.has(candidate)) {
+        geminiModelResolutionCache.set(cacheKey, candidate);
+        return candidate;
+      }
+    }
+
+    const previewMatch = [...availableModels]
+      .find((name) => name.startsWith(`${requestedModel}-`) && name.includes('preview'));
+    if (previewMatch) {
+      geminiModelResolutionCache.set(cacheKey, previewMatch);
+      return previewMatch;
+    }
+  } catch {
+    // Fall through to configured model when discovery is unavailable.
+  }
+
+  geminiModelResolutionCache.set(cacheKey, requestedModel);
+  return requestedModel;
+}
+
 async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
   const apiKey = getEnv('VITE_GEMINI_API_KEY');
   if (!apiKey) return null;
   if (!isLikelyGeminiApiKey(apiKey)) {
     return null;
   }
-  const baseUrl = (getEnv('VITE_GEMINI_BASE_URL') || DEFAULT_GEMINI_BASE_URL).replace(/\/$/, '');
-  const model = getEnv('VITE_GEMINI_MODEL') || DEFAULT_GEMINI_MODEL;
-
+  const baseUrl = normalizeProviderBaseUrl(getEnv('VITE_GEMINI_BASE_URL') || DEFAULT_GEMINI_BASE_URL, 'google-openai');
+  const nativeBaseUrl = normalizeProviderBaseUrl(getEnv('VITE_GEMINI_NATIVE_BASE_URL') || DEFAULT_GEMINI_NATIVE_BASE_URL, 'google-native');
+  const requestedModel = getEnv('VITE_GEMINI_MODEL') || DEFAULT_GEMINI_MODEL;
+  const model = await resolveGeminiModel(requestedModel, nativeBaseUrl, apiKey);
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -402,20 +641,66 @@ async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<M
     }),
   });
 
-  if (!response.ok) {
+  if (response.ok) {
+    const data = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = data.choices?.[0]?.message?.content ?? '';
+    return {
+      modelName: model === requestedModel ? model : `${requestedModel} (resolved as ${model})`,
+      brief: parseModelBriefOrFallback(content, analysis, 'Gemini'),
+    };
+  }
+
+  if (response.status !== 404) {
     const responseBodySnippet = await readResponseBodySnippet(response);
     const detail = responseBodySnippet ? ` ${responseBodySnippet}` : '';
     throw new Error(`Gemini request failed (${response.status}).${detail}`);
   }
 
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data.choices?.[0]?.message?.content ?? '';
+  const nativeResponse = await fetch(
+    `${nativeBaseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: 'You are a meticulous motorsport setup analyst.' }],
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+        },
+      }),
+    }
+  );
 
+  if (!nativeResponse.ok) {
+    const responseBodySnippet = await readResponseBodySnippet(nativeResponse);
+    const detail = responseBodySnippet ? ` ${responseBodySnippet}` : '';
+    throw new Error(`Gemini native request failed (${nativeResponse.status}).${detail}`);
+  }
+
+  const nativeData = await nativeResponse.json() as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ text?: string }>;
+      };
+    }>;
+  };
+  const content = nativeData.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text || '')
+    .join('') ?? '';
   return {
-    modelName: model,
-    brief: parseModelBrief(content, analysis),
+    modelName: model === requestedModel ? model : `${requestedModel} (resolved as ${model})`,
+    brief: parseModelBriefOrFallback(content, analysis, 'Gemini'),
   };
 }
 
@@ -425,8 +710,14 @@ async function queryOpus(prompt: string, analysis: SessionAnalysis): Promise<Mod
   if (!isLikelyAnthropicApiKey(apiKey)) {
     return null;
   }
-  const baseUrl = (getEnv('VITE_ANTHROPIC_BASE_URL') || DEFAULT_ANTHROPIC_BASE_URL).replace(/\/$/, '');
+  const baseUrl = normalizeProviderBaseUrl(getEnv('VITE_ANTHROPIC_BASE_URL') || DEFAULT_ANTHROPIC_BASE_URL, 'anthropic');
   const model = getEnv('VITE_OPUS_MODEL') || DEFAULT_OPUS_MODEL;
+  const isBrowser = isBrowserRuntime();
+  const directAnthropicEndpoint = /(^https?:\/\/)?api\.anthropic\.com\/?/i.test(baseUrl);
+  if (isBrowser && directAnthropicEndpoint) {
+    // Direct browser calls to Anthropic are blocked by CORS unless routed through a proxy.
+    return null;
+  }
 
   let response: Response;
   try {
@@ -436,10 +727,11 @@ async function queryOpus(prompt: string, analysis: SessionAnalysis): Promise<Mod
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1400,
+        max_tokens: 4096,
         temperature: 0.2,
         system: 'You are a meticulous motorsport setup analyst.',
         messages: [{ role: 'user', content: prompt }],
@@ -465,17 +757,21 @@ async function queryOpus(prompt: string, analysis: SessionAnalysis): Promise<Mod
 
   return {
     modelName: model,
-    brief: parseModelBrief(text, analysis),
+    brief: parseModelBriefOrFallback(text, analysis, 'Opus'),
   };
 }
 
-async function queryOpenRouter(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
+async function queryOpenRouter(
+  prompt: string,
+  analysis: SessionAnalysis,
+  preferredModel?: string
+): Promise<ModelResult | null> {
   const apiKey = getEnv('VITE_OPENROUTER_API_KEY');
   if (!apiKey) return null;
   if (!isLikelyOpenRouterApiKey(apiKey)) return null;
-  const baseUrl = (getEnv('VITE_OPENROUTER_BASE_URL') || DEFAULT_OPENROUTER_BASE_URL).replace(/\/$/, '');
-  const model = getEnv('VITE_OPENROUTER_MODEL') || DEFAULT_OPENROUTER_MODEL;
-
+  const baseUrl = normalizeProviderBaseUrl(getEnv('VITE_OPENROUTER_BASE_URL') || DEFAULT_OPENROUTER_BASE_URL, 'openrouter');
+  const configuredModel = getEnv('VITE_OPENROUTER_MODEL') || DEFAULT_OPENROUTER_MODEL;
+  const selectedModel = preferredModel || configuredModel;
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -483,7 +779,7 @@ async function queryOpenRouter(prompt: string, analysis: SessionAnalysis): Promi
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model,
+      model: selectedModel,
       temperature: 0.2,
       messages: [
         { role: 'system', content: 'You are a meticulous motorsport setup analyst.' },
@@ -504,16 +800,20 @@ async function queryOpenRouter(prompt: string, analysis: SessionAnalysis): Promi
   const content = data.choices?.[0]?.message?.content ?? '';
 
   return {
-    modelName: `openrouter:${model}`,
-    brief: parseModelBrief(content, analysis),
+    modelName: `openrouter:${selectedModel}`,
+    brief: parseModelBriefOrFallback(content, analysis, 'OpenRouter'),
   };
 }
 
-async function queryOpenAI(prompt: string, analysis: SessionAnalysis): Promise<ModelResult | null> {
+async function queryOpenAI(
+  prompt: string,
+  analysis: SessionAnalysis,
+  allowOpenRouterFallback: boolean
+): Promise<ModelResult | null> {
   const apiKey = getEnv('VITE_OPENAI_API_KEY');
   if (!apiKey) return null;
   if (!isLikelyOpenAIApiKey(apiKey)) return null;
-  const baseUrl = (getEnv('VITE_OPENAI_BASE_URL') || DEFAULT_OPENAI_BASE_URL).replace(/\/$/, '');
+  const baseUrl = normalizeProviderBaseUrl(getEnv('VITE_OPENAI_BASE_URL') || DEFAULT_OPENAI_BASE_URL, 'openai');
   const model = getEnv('VITE_OPENAI_MODEL') || DEFAULT_OPENAI_MODEL;
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -532,6 +832,20 @@ async function queryOpenAI(prompt: string, analysis: SessionAnalysis): Promise<M
     }),
   });
 
+  if (allowOpenRouterFallback && (response.status === 400 || response.status === 403 || response.status === 404 || response.status === 429)) {
+    const openRouterFallback = await queryOpenRouter(
+      prompt,
+      analysis,
+      model.startsWith('openai/') ? model : `openai/${model}`
+    );
+    if (openRouterFallback) {
+      return {
+        ...openRouterFallback,
+        modelName: `openai:${model} (via ${openRouterFallback.modelName})`,
+      };
+    }
+  }
+
   if (!response.ok) {
     const responseBodySnippet = await readResponseBodySnippet(response);
     const detail = responseBodySnippet ? ` ${responseBodySnippet}` : '';
@@ -545,7 +859,7 @@ async function queryOpenAI(prompt: string, analysis: SessionAnalysis): Promise<M
 
   return {
     modelName: `openai:${model}`,
-    brief: parseModelBrief(content, analysis),
+    brief: parseModelBriefOrFallback(content, analysis, 'OpenAI'),
   };
 }
 
@@ -607,6 +921,20 @@ function mergeRecommendations(results: ModelResult[]): { recommendations: AIReco
   };
 }
 
+function dedupeModelResults(results: ModelResult[]): ModelResult[] {
+  const seen = new Set<string>();
+  const deduped: ModelResult[] = [];
+
+  for (const result of results) {
+    const identity = canonicalModelIdentity(result.modelName);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    deduped.push(result);
+  }
+
+  return deduped;
+}
+
 function stringifyError(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string' && error.trim().length > 0) return error.trim();
@@ -632,9 +960,10 @@ function buildNoResultError(
 }
 
 function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis): AISetupBrief {
+  const uniqueResults = dedupeModelResults(results);
   const mappingSummary = analysis.normalizedSetup.mappingStats;
   const mappingSummaryNote = `Mapping quality: ${mappingSummary.exact} exact, ${mappingSummary.ordered} ordered, ${mappingSummary.ambiguous} ambiguous.`;
-  if (results.length === 0) {
+  if (uniqueResults.length === 0) {
     throw new Error('No successful AI model responses were received.');
   }
 
@@ -643,8 +972,8 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     5,
   );
 
-  if (results.length === 1) {
-    const single = results[0];
+  if (uniqueResults.length === 1) {
+    const single = uniqueResults[0];
     return {
       summary: single.brief.summary,
       recommendations: single.brief.recommendations,
@@ -660,7 +989,7 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     };
   }
 
-  const [first, second] = results;
+  const [first, second] = uniqueResults;
   const mergedWatch = dedupeStrings(
     [...first.brief.watchItems, ...second.brief.watchItems],
     5
@@ -669,7 +998,7 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     [...first.brief.reasoning, ...second.brief.reasoning],
     6
   );
-  const mergedRecommendations = mergeRecommendations(results);
+  const mergedRecommendations = mergeRecommendations(uniqueResults);
   const disagreementDetails = dedupeStrings(
     [
       ...mergedRecommendations.disagreements,
@@ -693,11 +1022,21 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     reasoning: mergedReasoning,
     disagreements: disagreementDetails,
     source: 'consensus',
-    modelsUsed: [first.modelName, second.modelName],
+    modelsUsed: uniqueResults.map((result) => result.modelName),
   };
 }
 
 export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<AISetupBrief> {
+  const runKey = buildAnalysisRunKey(analysis);
+  const inFlight = inFlightBriefByKey.get(runKey);
+  if (inFlight) return inFlight;
+
+  const task = (async (): Promise<AISetupBrief> => {
+  const report: AIProviderDebugReport = {
+    startedAt: new Date().toISOString(),
+    providers: [],
+  };
+  lastAIProviderDebugReport = report;
   const prompt = buildPrompt(analysis);
   const {
     geminiKey,
@@ -724,14 +1063,88 @@ export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<A
       invalidNotes.push('VITE_OPENAI_API_KEY must start with "sk-".');
     }
     const suffix = invalidNotes.length > 0 ? ` ${invalidNotes.join(' ')}` : '';
+    lastAIProviderDebugReport = finishProviderDebugReport(report);
     throw new Error(`AI analysis is not configured with a valid provider key.${suffix}`);
   }
 
+  const geminiBaseUrl = normalizeProviderBaseUrl(getEnv('VITE_GEMINI_BASE_URL') || DEFAULT_GEMINI_BASE_URL, 'google-openai');
+  const geminiModel = getEnv('VITE_GEMINI_MODEL') || DEFAULT_GEMINI_MODEL;
+  const anthropicBaseUrl = normalizeProviderBaseUrl(getEnv('VITE_ANTHROPIC_BASE_URL') || DEFAULT_ANTHROPIC_BASE_URL, 'anthropic');
+  const opusModel = getEnv('VITE_OPUS_MODEL') || DEFAULT_OPUS_MODEL;
+  const openRouterBaseUrl = normalizeProviderBaseUrl(getEnv('VITE_OPENROUTER_BASE_URL') || DEFAULT_OPENROUTER_BASE_URL, 'openrouter');
+  const openRouterModel = getEnv('VITE_OPENROUTER_MODEL') || DEFAULT_OPENROUTER_MODEL;
+  const openAIBaseUrl = normalizeProviderBaseUrl(getEnv('VITE_OPENAI_BASE_URL') || DEFAULT_OPENAI_BASE_URL, 'openai');
+  const openAIModel = getEnv('VITE_OPENAI_MODEL') || DEFAULT_OPENAI_MODEL;
+  const sameOpenAIAndOpenRouterModel = hasOpenAI
+    && hasOpenRouter
+    && areConfiguredModelsEquivalent(openAIModel, openRouterModel);
+  const skipStandaloneOpenRouter = false;
+  const skipStandaloneOpenAI = sameOpenAIAndOpenRouterModel;
+  const allowOpenRouterFallbackForOpenAI = !hasOpenRouter && !skipStandaloneOpenAI;
+
   const providerRuns = [
-    { name: 'Gemini', run: queryGemini(prompt, analysis) },
-    { name: 'Opus', run: queryOpus(prompt, analysis) },
-    { name: 'OpenRouter', run: queryOpenRouter(prompt, analysis) },
-    { name: 'OpenAI', run: queryOpenAI(prompt, analysis) },
+    {
+      name: 'Gemini',
+      run: runProviderWithDebug(
+        report,
+        {
+          provider: 'Gemini',
+          configured: Boolean(geminiKey),
+          keyValid: hasGemini,
+          model: geminiModel,
+          baseUrl: geminiBaseUrl,
+        },
+        () => queryGemini(prompt, analysis)
+      ),
+    },
+    {
+      name: 'Opus',
+      run: runProviderWithDebug(
+        report,
+        {
+          provider: 'Opus',
+          configured: Boolean(anthropicKey),
+          keyValid: hasAnthropic,
+          model: opusModel,
+          baseUrl: anthropicBaseUrl,
+        },
+        () => queryOpus(prompt, analysis)
+      ),
+    },
+    {
+      name: 'OpenRouter',
+      run: runProviderWithDebug(
+        report,
+        {
+          provider: 'OpenRouter',
+          configured: Boolean(openRouterKey),
+          keyValid: hasOpenRouter,
+          model: openRouterModel,
+          baseUrl: openRouterBaseUrl,
+        },
+        () => {
+          if (skipStandaloneOpenRouter) return Promise.resolve(null);
+          return queryOpenRouter(prompt, analysis);
+        }
+      ),
+    },
+    {
+      name: 'OpenAI',
+      run: runProviderWithDebug(
+        report,
+        {
+          provider: 'OpenAI',
+          configured: Boolean(openAIKey),
+          keyValid: hasOpenAI,
+          model: openAIModel,
+          baseUrl: openAIBaseUrl,
+        },
+        () => {
+          if (skipStandaloneOpenAI) return Promise.resolve(null);
+          return queryOpenAI(prompt, analysis, allowOpenRouterFallbackForOpenAI);
+        }
+      ),
+    },
   ];
   const settled = await Promise.allSettled(providerRuns.map((provider) => provider.run));
   const successful: ModelResult[] = settled
@@ -740,8 +1153,19 @@ export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<A
     .filter((v): v is ModelResult => v != null);
 
   if (successful.length === 0) {
+    lastAIProviderDebugReport = finishProviderDebugReport(report);
     throw buildNoResultError(settled, providerRuns.map((provider) => provider.name));
   }
 
-  return buildConsensusBrief(successful, analysis);
+  const brief = buildConsensusBrief(successful, analysis);
+  lastAIProviderDebugReport = finishProviderDebugReport(report);
+  return brief;
+  })();
+
+  inFlightBriefByKey.set(runKey, task);
+  try {
+    return await task;
+  } finally {
+    inFlightBriefByKey.delete(runKey);
+  }
 }

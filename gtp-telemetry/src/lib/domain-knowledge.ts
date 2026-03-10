@@ -10,7 +10,7 @@ export interface SimConstraint {
   parameter: string;
   limit: number;
   unit: string;
-  enforcementType: 'hard-minimum' | 'hard-maximum';
+  enforcementType: 'hard-minimum' | 'hard-maximum' | 'setup-only';
   affectedCars: string[] | 'all';
   workaround: string;
 }
@@ -126,13 +126,13 @@ export interface DamperSlopeRule {
 export const SIM_CONSTRAINTS: SimConstraint[] = [
   {
     id: 'front-rh-floor',
-    description: 'Front ride height sim-enforced minimum of 30.0 mm',
+    description: 'Front ride height garage-setup minimum of 30.0 mm (static only — dynamic ride height at speed will compress below 30mm under aero load, which is normal and expected)',
     parameter: 'frontRideHeight',
     limit: 30.0,
     unit: 'mm',
-    enforcementType: 'hard-minimum',
+    enforcementType: 'setup-only',
     affectedCars: 'all',
-    workaround: 'Fix front bottoming via heave spring stiffness, HS comp damping, and HS comp slope. Re-balance pushrod offset vs heave perch offset vs torsion bar while holding 30mm static.',
+    workaround: 'The 30mm limit only applies to the garage setup screen. During running, the splitter/front RH will drop below 30mm due to aero load and suspension compression — this is not a violation. Address excessive bottoming via heave spring stiffness, HS comp damping, and HS comp slope.',
   },
   {
     id: 'min-cold-pressure',
@@ -359,7 +359,7 @@ export const DIAGNOSTIC_RULES: DiagnosticRule[] = [
     primaryParameters: ['frontHeaveSpring', 'frontHSComp', 'frontHSCompSlope'],
     direction: 'Stiffen front heave spring, increase front HS comp, lower HS comp slope for digressive',
     magnitude: '15-25 N/mm heave (Sebring needs ≥65), 2-3 clicks HS comp, 1-2 clicks slope',
-    tradeoff: 'Cannot raise front static RH above 30mm without losing front aero. Fix dynamically via spring/damper.',
+    tradeoff: 'Cannot raise front static RH above 30mm in the garage. Dynamic RH below 30mm at speed is normal aero compression — fix excessive bottoming via spring/damper.',
     verifyChannel: 'CFSRrideHeight min value and LFrideHeight/RFrideHeight at speed',
     confidence: 'HIGH' },
   { id: 'bottoming-rear', symptom: 'bottoming', phase: 'mid', speedRegime: 'high',
@@ -414,7 +414,7 @@ export const TRACK_SETUP_GUIDANCE: Record<string, TrackSetupGuidance> = {
     keyCompromise: 'Bump compliance vs aero platform — concrete/asphalt transitions',
     bestCar: 'BMW M Hybrid V8 (mechanical grip advantage)',
     specialNotes: [
-      'Front RH at 30.0mm floor — bottoming addressed via heave spring + HS comp',
+      'Front static RH at 30.0mm garage floor — dynamic RH below 30mm at speed is expected; bottoming addressed via heave spring + HS comp',
       'Expect hot pressures 25-27 PSI from 152 kPa min cold',
       'Track temp ~39°C typical',
       'Lower HS comp slope for digressive damping on bumps',
@@ -474,7 +474,7 @@ export const TRACK_SETUP_GUIDANCE: Record<string, TrackSetupGuidance> = {
     keyCompromise: 'Chicane compliance vs straight speed',
     specialNotes: [
       'Long gear stack MANDATORY since S2 2025',
-      'Front RH at 30mm = minimum drag config by default',
+      'Front static RH at 30mm garage minimum = lowest drag config; dynamic RH below 30mm at speed is normal',
       'Ferrari cornering mode valuable through Porsche Curves',
     ],
   },

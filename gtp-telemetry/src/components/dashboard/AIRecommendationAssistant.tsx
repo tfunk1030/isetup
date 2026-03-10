@@ -6,6 +6,8 @@ import {
 import { Card } from '../shared/Card';
 import { StatusBadge } from '../shared/StatusBadge';
 import {
+  getLastAIProviderDebugReport,
+  type AIProviderDebugReport,
   generateAISetupBrief,
   getAIRecommendationMode,
   hasAIRecommendationConfig,
@@ -61,10 +63,15 @@ function exactnessLabel(exactness: AISetupBrief['recommendations'][number]['exac
   return { text: 'Inferred', status: 'HIGH' };
 }
 
+function dedupe(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
 export function AIRecommendationAssistant({ analysis }: Props) {
   const [loading, setLoading] = useState(false);
   const [brief, setBrief] = useState<AISetupBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [debugReport, setDebugReport] = useState<AIProviderDebugReport | null>(null);
   const runIdRef = useRef(0);
 
   const configured = hasAIRecommendationConfig();
@@ -78,15 +85,18 @@ export function AIRecommendationAssistant({ analysis }: Props) {
     const runId = ++runIdRef.current;
     setLoading(true);
     setError(null);
+    setDebugReport(null);
 
     try {
       const result = await generateAISetupBrief(analysis);
       if (runId !== runIdRef.current) return;
       setBrief(result);
+      setDebugReport(getLastAIProviderDebugReport());
     } catch (err) {
       if (runId !== runIdRef.current) return;
       setBrief(null);
       setError(err instanceof Error ? err.message : String(err));
+      setDebugReport(getLastAIProviderDebugReport());
     } finally {
       if (runId === runIdRef.current) {
         setLoading(false);
@@ -98,6 +108,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
     runIdRef.current += 1;
     setBrief(null);
     setError(null);
+    setDebugReport(null);
     setLoading(false);
 
     if (!configured) return;
@@ -105,6 +116,16 @@ export function AIRecommendationAssistant({ analysis }: Props) {
   }, [analysisKey, configured, runAssistant]);
 
   const src = brief ? sourceLabel(brief.source) : null;
+  const attemptedModels = useMemo(
+    () => dedupe((debugReport?.providers || []).map((provider) => provider.model)),
+    [debugReport]
+  );
+  const ranModels = useMemo(
+    () => dedupe((debugReport?.providers || [])
+      .filter((provider) => provider.status === 'success')
+      .map((provider) => provider.model)),
+    [debugReport]
+  );
 
   return (
     <Card title="AI Setup Assistant" icon={<Bot className="h-4 w-4" />}>
@@ -127,6 +148,19 @@ export function AIRecommendationAssistant({ analysis }: Props) {
           {mode === 'dual-model' ? 'Mode: multi-provider consensus' : mode === 'single-model' ? 'Mode: single-provider AI' : 'Mode: unconfigured'}
         </span>
       </div>
+      {debugReport && (
+        <div className="mb-5 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Model Execution
+          </p>
+          <p className="text-xs text-[var(--color-text-dim)]">
+            Analyzed models ({attemptedModels.length}): {attemptedModels.length > 0 ? attemptedModels.join(', ') : 'none'}
+          </p>
+          <p className="text-xs text-[var(--color-text-dim)]">
+            Ran successfully ({ranModels.length}): {ranModels.length > 0 ? ranModels.join(', ') : 'none'}
+          </p>
+        </div>
+      )}
 
       {!configured && (
         <p className="mb-4 text-xs text-[var(--color-text-muted)]">
@@ -142,6 +176,24 @@ export function AIRecommendationAssistant({ analysis }: Props) {
           <div className="min-w-0 flex-1">
             <p className="mb-1 text-sm font-semibold text-[var(--color-red)]">AI analysis failed</p>
             <p className="mb-2 text-xs text-[var(--color-text-muted)]">{error}</p>
+            {debugReport && (
+              <details className="mb-2 rounded-lg border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-2">
+                <summary className="cursor-pointer text-xs font-semibold text-[var(--color-text-muted)]">Debug details</summary>
+                <div className="mt-2 space-y-2">
+                  {debugReport.providers.map((provider) => (
+                    <div key={provider.provider} className="rounded-md bg-[var(--color-surface)] p-2 text-[11px] text-[var(--color-text-dim)]">
+                      <p className="font-semibold text-[var(--color-text)]">
+                        {provider.provider}: {provider.status.toUpperCase()} ({provider.durationMs} ms)
+                      </p>
+                      <p>Model: <span className="font-mono">{provider.model}</span></p>
+                      <p>Base URL: <span className="font-mono">{provider.baseUrl}</span></p>
+                      <p>Configured: {provider.configured ? 'yes' : 'no'} | Key valid: {provider.keyValid ? 'yes' : 'no'}</p>
+                      {provider.error && <p className="text-[var(--color-red)]">Error: {provider.error}</p>}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             <button
               onClick={runAssistant}
               disabled={loading || !configured}

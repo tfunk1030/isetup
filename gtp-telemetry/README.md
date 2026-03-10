@@ -56,16 +56,19 @@ Configure these env vars to enable dual-model cloud synthesis (Gemini + Opus):
 ```bash
 VITE_GEMINI_API_KEY=your_google_ai_key
 VITE_GEMINI_MODEL=gemini-3.1-pro
-VITE_GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+VITE_GEMINI_BASE_URL=/api/google/v1beta/openai
+VITE_GEMINI_NATIVE_BASE_URL=/api/google/v1beta
 
 VITE_ANTHROPIC_API_KEY=your_anthropic_key
 VITE_OPUS_MODEL=claude-opus-4-6
-VITE_ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
+VITE_ANTHROPIC_BASE_URL=/api/anthropic/v1
 VITE_OPENAI_API_KEY=your_openai_key
 VITE_OPENAI_MODEL=gpt-5.4
+VITE_OPENAI_BASE_URL=/api/openai/v1
+VITE_OPENROUTER_BASE_URL=/api/openrouter/api/v1
 ```
 
-Note: this app is browser-only. Direct Anthropic calls from the browser may fail with CORS/network errors in some environments. If that happens, run Gemini-only mode (omit `VITE_ANTHROPIC_API_KEY`) or route Anthropic through your own backend proxy.
+Note: in local development, Vite proxies `/api/*` routes to provider APIs so Gemini, Opus, and GPT requests can run from the browser without CORS failures.
 
 If one model key is configured, it runs single-model AI mode.  
 If both keys are configured, it runs dual-model consensus mode.  

@@ -1160,13 +1160,9 @@ function validateConstraints(
     }
 
     if (constraint.id === 'front-rh-floor') {
-      // Check if any recommendation would suggest raising front RH (impossible)
-      // This is more of an awareness constraint — the violation is informational
-      const frontRH = getNormalizedParameter(normalizedSetup, 'platform.frontPushrod');
-      if (frontRH) {
-        // Front RH at 30mm is the baseline — no violation per se, but note it
-        // Only generate violation if setup somehow has front RH below 30mm
-      }
+      // 30mm is a garage/setup-screen minimum only.
+      // Dynamic ride height at speed WILL drop below 30mm under aero load —
+      // that is normal and expected, not a violation.
     }
 
     if (constraint.id === 'min-cold-pressure') {
