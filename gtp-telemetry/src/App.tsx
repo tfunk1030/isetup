@@ -187,7 +187,7 @@ function StandaloneTools() {
         <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => setTool('none')}
-            className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+            className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             Back
@@ -210,7 +210,7 @@ function StandaloneTools() {
         <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => setTool('none')}
-            className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+            className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             Back
@@ -237,14 +237,14 @@ function StandaloneTools() {
         <div className="flex gap-3 justify-center">
           <button
             onClick={() => setTool('diagnose')}
-            className="btn-secondary inline-flex items-center gap-2 text-xs px-5 py-2.5 rounded-xl"
+            className="btn-secondary inline-flex items-center gap-2 text-xs px-5 py-2.5 rounded-md"
           >
             <Stethoscope className="w-4 h-4" />
             Diagnose Handling
           </button>
           <button
             onClick={() => setTool('compare')}
-            className="btn-secondary inline-flex items-center gap-2 text-xs px-5 py-2.5 rounded-xl"
+            className="btn-secondary inline-flex items-center gap-2 text-xs px-5 py-2.5 rounded-md"
           >
             <GitCompare className="w-4 h-4" />
             Compare Setups

@@ -12,6 +12,7 @@ import {
   getCarDeepKnowledge,
   getTrackGuidance,
 } from './domain-knowledge';
+import { GTP_SYSTEM_PROMPT } from './gtp-system-prompt';
 
 const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
@@ -271,7 +272,7 @@ function validateRecommendation(
   };
 }
 
-function buildPrompt(analysis: SessionAnalysis): string {
+function buildPrompt(analysis: SessionAnalysis, driverFeedback?: string): string {
   const lastPressures = analysis.tyrePressureData[analysis.tyrePressureData.length - 1];
   const lastTemps = analysis.tyreTempData[analysis.tyreTempData.length - 1];
 
@@ -358,15 +359,25 @@ function buildPrompt(analysis: SessionAnalysis): string {
     }
   }
 
+  const driverFeedbackLines: string[] = [];
+  if (driverFeedback && driverFeedback.trim().length > 0) {
+    driverFeedbackLines.push(
+      'DRIVER FEEDBACK (from the driver describing how the car feels — treat this as high-priority context when diagnosing issues and prioritizing recommendations):',
+      driverFeedback.trim(),
+    );
+  }
+
   return [
     'You are an elite iRacing GTP setup engineer.',
     'You are receiving structured telemetry reasoning plus the parsed current garage setup.',
     ...domainContext.map(c => `DOMAIN KNOWLEDGE: ${c}`),
+    ...driverFeedbackLines,
     'Return setup recommendations as structured parameter diffs, not prose bullets.',
     'Only mark exactness as "exact" when the parameter has mappingQuality "exact", confidence "HIGH", and no ambiguousMatches.',
     'If mappingQuality is not exact, confidence is not HIGH, or ambiguousMatches is non-empty, exactness must be "inferred".',
     'If a recommendation is limited by missing setup values or sim constraints, mark exactness as "blocked" or "inferred" and explain why.',
     'Respect the impact hierarchy when prioritizing recommendations.',
+    'If driver feedback is provided, correlate it with telemetry evidence and prioritize recommendations that address the reported symptoms.',
     'Focus on setup engineering only (no driving advice).',
     'Return STRICT JSON only with keys:',
     '{ "summary": string, "recommendations": [{ "parameterKey": string, "displayName": string, "currentValue": string, "targetValue": string, "delta": string, "unit": string|null, "reason": string, "evidence": string[], "confidence": "HIGH"|"MEDIUM"|"LOW", "exactness": "exact"|"inferred"|"blocked", "verification": string[], "assumptions": string[] }], "watchItems": string[<=5], "confidenceNote": string, "reasoning": string[<=6], "assumptions": string[<=4] }',
@@ -635,7 +646,7 @@ async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<M
       model,
       temperature: 0.2,
       messages: [
-        { role: 'system', content: 'You are a meticulous motorsport setup analyst.' },
+        { role: 'system', content: GTP_SYSTEM_PROMPT },
         { role: 'user', content: prompt },
       ],
     }),
@@ -667,7 +678,7 @@ async function queryGemini(prompt: string, analysis: SessionAnalysis): Promise<M
       },
       body: JSON.stringify({
         systemInstruction: {
-          parts: [{ text: 'You are a meticulous motorsport setup analyst.' }],
+          parts: [{ text: GTP_SYSTEM_PROMPT }],
         },
         contents: [
           {
@@ -733,7 +744,7 @@ async function queryOpus(prompt: string, analysis: SessionAnalysis): Promise<Mod
         model,
         max_tokens: 4096,
         temperature: 0.2,
-        system: 'You are a meticulous motorsport setup analyst.',
+        system: GTP_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -782,7 +793,7 @@ async function queryOpenRouter(
       model: selectedModel,
       temperature: 0.2,
       messages: [
-        { role: 'system', content: 'You are a meticulous motorsport setup analyst.' },
+        { role: 'system', content: GTP_SYSTEM_PROMPT },
         { role: 'user', content: prompt },
       ],
     }),
@@ -826,7 +837,7 @@ async function queryOpenAI(
       model,
       temperature: 0.2,
       messages: [
-        { role: 'system', content: 'You are a meticulous motorsport setup analyst.' },
+        { role: 'system', content: GTP_SYSTEM_PROMPT },
         { role: 'user', content: prompt },
       ],
     }),
@@ -1026,8 +1037,9 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
   };
 }
 
-export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<AISetupBrief> {
-  const runKey = buildAnalysisRunKey(analysis);
+export async function generateAISetupBrief(analysis: SessionAnalysis, driverFeedback?: string): Promise<AISetupBrief> {
+  const feedbackSuffix = driverFeedback?.trim() ? `|fb:${driverFeedback.trim().slice(0, 80)}` : '';
+  const runKey = buildAnalysisRunKey(analysis) + feedbackSuffix;
   const inFlight = inFlightBriefByKey.get(runKey);
   if (inFlight) return inFlight;
 
@@ -1037,7 +1049,7 @@ export async function generateAISetupBrief(analysis: SessionAnalysis): Promise<A
     providers: [],
   };
   lastAIProviderDebugReport = report;
-  const prompt = buildPrompt(analysis);
+  const prompt = buildPrompt(analysis, driverFeedback);
   const {
     geminiKey,
     anthropicKey,

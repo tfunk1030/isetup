@@ -50,7 +50,7 @@ export function RARBAnalysis({ analysis }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} vertical={false} />
               <XAxis dataKey="lap" stroke={COLORS.textMuted} fontSize={11} tickFormatter={(v) => `L${v}`} />
               <YAxis stroke={COLORS.textMuted} fontSize={11} />
-              <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 10, fontSize: 12 }} />
+              <Tooltip contentStyle={{ background: COLORS.surface, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 4, fontSize: 12 }} />
               <Bar dataKey="changeCount" fill={COLORS.accent} radius={[6, 6, 0, 0]} name="Changes" fillOpacity={0.8} />
             </BarChart>
           </ResponsiveContainer>

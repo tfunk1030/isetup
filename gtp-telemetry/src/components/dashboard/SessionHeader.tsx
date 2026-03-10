@@ -79,12 +79,12 @@ export function SessionHeader() {
             <button
               onClick={handleExportPDF}
               disabled={exporting}
-              className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+              className="btn-secondary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md"
             >
               <FileDown className="w-3.5 h-3.5" />
               {exporting ? 'Exporting...' : 'Export PDF'}
             </button>
-            <label className="btn-primary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg cursor-pointer">
+            <label className="btn-primary inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
               New IBT
               <input

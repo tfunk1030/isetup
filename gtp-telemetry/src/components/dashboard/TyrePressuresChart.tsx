@@ -20,7 +20,7 @@ export function TyrePressuresChart({ analysis }: Props) {
             <CartesianGrid strokeDasharray="3 3" stroke={COLORS.cardBorder} vertical={false} />
             <XAxis dataKey="lap" stroke={COLORS.textMuted} fontSize={11} tickFormatter={(v) => `L${v}`} />
             <YAxis stroke={COLORS.textMuted} fontSize={11} domain={[20, 30]} />
-            <Tooltip contentStyle={{ background: COLORS.card, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 10, fontSize: 12 }} />
+            <Tooltip contentStyle={{ background: COLORS.surface, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 4, fontSize: 12 }} />
             <ReferenceLine y={TYRE_PRESSURE.HIGH_THRESHOLD} stroke={COLORS.accent} strokeDasharray="5 5" label={{ value: '24 PSI', fill: COLORS.accent, fontSize: 10 }} />
             <Line dataKey="LF" stroke={COLORS.LF} strokeWidth={2} dot={{ r: 3 }} />
             <Line dataKey="RF" stroke={COLORS.RF} strokeWidth={2} dot={{ r: 3 }} />

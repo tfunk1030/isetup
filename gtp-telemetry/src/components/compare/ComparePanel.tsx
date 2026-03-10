@@ -108,7 +108,7 @@ export function ComparePanel() {
           <select
             value={carId}
             onChange={(e) => setCarId(e.target.value)}
-            className="input-field w-full max-w-[300px] text-xs rounded-lg px-3 py-2"
+            className="input-field w-full max-w-[300px] text-xs rounded-md px-3 py-2"
           >
             <option value="">Auto-detect</option>
             {allCars.map((c) => (
@@ -153,7 +153,7 @@ export function ComparePanel() {
                 value={textA}
                 onChange={(e) => setTextA(e.target.value)}
                 placeholder="Paste iRacing setup YAML or JSON..."
-                className="input-field w-full h-[200px] text-[11px] font-mono rounded-xl px-4 py-3 resize-y"
+                className="input-field w-full h-[200px] text-[11px] font-mono rounded-md px-4 py-3 resize-y"
               />
             )}
           </div>
@@ -164,7 +164,7 @@ export function ComparePanel() {
               value={textB}
               onChange={(e) => setTextB(e.target.value)}
               placeholder="Paste iRacing setup YAML or JSON..."
-              className="input-field w-full h-[200px] text-[11px] font-mono rounded-xl px-4 py-3 resize-y"
+              className="input-field w-full h-[200px] text-[11px] font-mono rounded-md px-4 py-3 resize-y"
             />
           </div>
         </div>
@@ -178,7 +178,7 @@ export function ComparePanel() {
         <button
           type="button"
           onClick={handleCompare}
-          className="btn-primary w-full inline-flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-xl"
+          className="btn-primary w-full inline-flex items-center justify-center gap-2 text-sm font-semibold py-3 rounded-md"
         >
           <GitCompare className="w-4 h-4" />
           Compare

@@ -12,12 +12,12 @@ interface CardProps {
 export function Card({ title, icon, children, span = 1, className = '', accent = false }: CardProps) {
   return (
     <div
-      className={`glass-card rounded-2xl p-6 animate-fade-slide-in ${accent ? 'glow-accent' : ''} ${className}`}
+      className={`flat-card rounded-xl p-6 animate-fade-slide-in ${className}`}
       style={span > 1 ? { gridColumn: `span ${span}` } : undefined}
     >
       <div className="flex items-center gap-2.5 mb-5">
         {icon && (
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-accent-glow)] text-[var(--color-accent)]">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-accent-dim)] text-black">
             {icon}
           </div>
         )}

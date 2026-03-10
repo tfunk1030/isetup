@@ -89,7 +89,7 @@ export function DiagnosePanel() {
             <select
               value={carId}
               onChange={(e) => setCarId(e.target.value)}
-              className="input-field w-full text-xs rounded-lg px-3 py-2"
+              className="input-field w-full text-xs rounded-md px-3 py-2"
             >
               <option value="">Any car</option>
               {allCars.map((c) => (
@@ -102,7 +102,7 @@ export function DiagnosePanel() {
             <select
               value={trackId}
               onChange={(e) => setTrackId(e.target.value)}
-              className="input-field w-full text-xs rounded-lg px-3 py-2"
+              className="input-field w-full text-xs rounded-md px-3 py-2"
             >
               <option value="">Any track</option>
               {allTracks.map((t) => (
@@ -202,7 +202,7 @@ export function DiagnosePanel() {
             value={freeText}
             onChange={(e) => setFreeText(e.target.value)}
             placeholder="e.g. 'Car pushes on entry at low-speed corners' or 'Oversteer on power at Eau Rouge'"
-            className="input-field w-full text-xs rounded-xl px-4 py-3 resize-y min-h-[60px]"
+            className="input-field w-full text-xs rounded-md px-4 py-3 resize-y min-h-[60px]"
           />
         </div>
 

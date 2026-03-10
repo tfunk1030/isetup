@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  AlertTriangle, Bot, Brain, ClipboardList, Eye, Target,
+  AlertTriangle, Bot, Brain, ChevronDown, ChevronUp, ClipboardList, Eye, MessageSquare, Target,
 } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { StatusBadge } from '../shared/StatusBadge';
@@ -67,11 +67,28 @@ function dedupe(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+const FEEDBACK_PRESETS = [
+  'Understeer on entry',
+  'Understeer mid-corner',
+  'Oversteer on exit',
+  'Oversteer under braking',
+  'Rear instability at high speed',
+  'Poor traction out of slow corners',
+  'Car bottoming too much',
+  'Front tyres overheating',
+  'Rear tyres overheating',
+  'Car feels too stiff over kerbs',
+  'Snap oversteer on turn-in',
+  'Push in fast corners',
+] as const;
+
 export function AIRecommendationAssistant({ analysis }: Props) {
   const [loading, setLoading] = useState(false);
   const [brief, setBrief] = useState<AISetupBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [debugReport, setDebugReport] = useState<AIProviderDebugReport | null>(null);
+  const [driverFeedback, setDriverFeedback] = useState('');
+  const [feedbackOpen, setFeedbackOpen] = useState(true);
   const runIdRef = useRef(0);
 
   const configured = hasAIRecommendationConfig();
@@ -87,8 +104,9 @@ export function AIRecommendationAssistant({ analysis }: Props) {
     setError(null);
     setDebugReport(null);
 
+    const feedback = driverFeedback.trim() || undefined;
     try {
-      const result = await generateAISetupBrief(analysis);
+      const result = await generateAISetupBrief(analysis, feedback);
       if (runId !== runIdRef.current) return;
       setBrief(result);
       setDebugReport(getLastAIProviderDebugReport());
@@ -102,7 +120,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
         setLoading(false);
       }
     }
-  }, [analysis]);
+  }, [analysis, driverFeedback]);
 
   useEffect(() => {
     runIdRef.current += 1;
@@ -110,10 +128,8 @@ export function AIRecommendationAssistant({ analysis }: Props) {
     setError(null);
     setDebugReport(null);
     setLoading(false);
-
-    if (!configured) return;
-    void runAssistant();
-  }, [analysisKey, configured, runAssistant]);
+    setFeedbackOpen(true);
+  }, [analysisKey]);
 
   const src = brief ? sourceLabel(brief.source) : null;
   const attemptedModels = useMemo(
@@ -131,18 +147,91 @@ export function AIRecommendationAssistant({ analysis }: Props) {
     <Card title="AI Setup Assistant" icon={<Bot className="h-4 w-4" />}>
       <div className="mb-4 flex items-center justify-between">
         <p className="text-xs text-[var(--color-text-muted)]">
-          AI-only setup analysis runs automatically for each uploaded telemetry file.
+          Describe how the car feels, then run AI analysis for targeted setup recommendations.
         </p>
         <StatusBadge status={configured ? 'OK' : 'HIGH'} />
+      </div>
+
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => setFeedbackOpen(!feedbackOpen)}
+          className="flex w-full items-center gap-2 rounded-lg border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-surface)]"
+        >
+          <MessageSquare className="h-3.5 w-3.5 text-[var(--color-accent)]" />
+          <span className="flex-1 text-xs font-semibold text-[var(--color-text)]">
+            Driver Feedback
+            {driverFeedback.trim() && (
+              <span className="ml-2 font-normal text-[var(--color-text-muted)]">
+                — {driverFeedback.trim().length > 60 ? `${driverFeedback.trim().slice(0, 60)}...` : driverFeedback.trim()}
+              </span>
+            )}
+          </span>
+          {feedbackOpen
+            ? <ChevronUp className="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+            : <ChevronDown className="h-3.5 w-3.5 text-[var(--color-text-muted)]" />}
+        </button>
+        {feedbackOpen && (
+          <div className="mt-2 space-y-3 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-4">
+            <p className="text-[11px] text-[var(--color-text-muted)]">
+              Describe how the car feels so the AI can prioritize setup changes that address your symptoms.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {FEEDBACK_PRESETS.map((preset) => {
+                const active = driverFeedback.includes(preset);
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      if (active) {
+                        setDriverFeedback((prev) =>
+                          prev.replace(preset, '').replace(/[,;]\s*[,;]/g, ',').replace(/^[,;\s]+|[,;\s]+$/g, '').trim()
+                        );
+                      } else {
+                        setDriverFeedback((prev) =>
+                          prev.trim() ? `${prev.trim()}, ${preset}` : preset
+                        );
+                      }
+                    }}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                      active
+                        ? 'border-[var(--color-accent)] bg-[var(--color-accent-glow)] font-semibold text-[var(--color-accent)]'
+                        : 'border-[var(--color-card-border)] text-[var(--color-text-dim)] hover:border-[var(--color-accent)]/50 hover:text-[var(--color-text)]'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                );
+              })}
+            </div>
+            <textarea
+              value={driverFeedback}
+              onChange={(e) => setDriverFeedback(e.target.value)}
+              placeholder="e.g. &quot;Car pushes hard on entry at T1 and snaps oversteer on exit of fast corners...&quot;"
+              rows={3}
+              className="w-full resize-y rounded-lg border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+            />
+            {driverFeedback.trim() && (
+              <button
+                type="button"
+                onClick={() => setDriverFeedback('')}
+                className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:underline"
+              >
+                Clear feedback
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <button
           onClick={runAssistant}
           disabled={loading || !configured}
-          className="btn-primary rounded-lg px-5 py-2.5 text-[13px]"
+          className="btn-primary rounded-md px-5 py-2.5 text-[13px]"
         >
-          {loading ? 'Analyzing...' : 'Re-run AI Analysis'}
+          {loading ? 'Analyzing...' : brief ? 'Re-run AI Analysis' : 'Run AI Analysis'}
         </button>
         <span className="text-xs text-[var(--color-text-muted)]">
           {mode === 'dual-model' ? 'Mode: multi-provider consensus' : mode === 'single-model' ? 'Mode: single-provider AI' : 'Mode: unconfigured'}
@@ -169,6 +258,18 @@ export function AIRecommendationAssistant({ analysis }: Props) {
       )}
 
       {loading && <LoadingSkeleton />}
+
+      {!loading && !brief && !error && configured && (
+        <div className="mb-4 rounded-xl border border-dashed border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-5 text-center">
+          <MessageSquare className="mx-auto mb-2 h-5 w-5 text-[var(--color-text-muted)]" />
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Add driver feedback above, then press <strong className="text-[var(--color-text)]">Run AI Analysis</strong> to start.
+          </p>
+          <p className="mt-1 text-[11px] text-[var(--color-text-dim)]">
+            Feedback is optional — you can run the analysis without it.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-[var(--color-red)]/20 bg-[var(--color-red)]/5 p-4">
