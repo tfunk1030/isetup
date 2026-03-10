@@ -297,6 +297,8 @@ export type SetupParameterGroup =
   | 'tyres'
   | 'electronics';
 
+export type SetupMappingQuality = 'exact' | 'ordered' | 'ambiguous';
+
 export interface NormalizedSetupParameter {
   parameterKey: string;
   displayName: string;
@@ -310,6 +312,8 @@ export interface NormalizedSetupParameter {
   valueType: 'number' | 'string';
   numericValue?: number;
   confidence: ConfidenceLevel;
+  mappingQuality: SetupMappingQuality;
+  candidateSourcePaths?: string[];
 }
 
 export interface NormalizedSetup {
@@ -317,6 +321,8 @@ export interface NormalizedSetup {
   parameters: NormalizedSetupParameter[];
   missingKeys: string[];
   unsupportedKeys: string[];
+  ambiguousKeys: string[];
+  mappingWarnings: string[];
 }
 
 export type ReasoningPhase = 'entry' | 'mid' | 'exit' | 'platform' | 'tyres';

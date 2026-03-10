@@ -1084,6 +1084,41 @@ function finalizeRecommendations(recommendations: DraftRecommendation[]): SetupR
   return withPriority.slice(0, 15);
 }
 
+function applyMappingTransparency(
+  recommendations: DraftRecommendation[],
+  normalizedSetup: NormalizedSetup
+): DraftRecommendation[] {
+  return recommendations.map((recommendation) => {
+    if (!recommendation.parameterKey) return recommendation;
+    const parameter = getNormalizedParameter(normalizedSetup, recommendation.parameterKey);
+    if (!parameter) return recommendation;
+
+    const blockedBy = [...(recommendation.blockedBy || [])];
+    if (parameter.mappingQuality === 'ordered' && recommendation.exactness === 'exact') {
+      blockedBy.push(`Parameter mapped via ordered fallback from "${parameter.sourcePath}".`);
+      return {
+        ...recommendation,
+        exactness: 'inferred',
+        blockedBy,
+      };
+    }
+
+    if (parameter.mappingQuality === 'ambiguous') {
+      blockedBy.push(`Parameter mapping is ambiguous. Selected "${parameter.sourcePath}" among candidates.`);
+      if (parameter.candidateSourcePaths && parameter.candidateSourcePaths.length > 1) {
+        blockedBy.push(`Candidate paths: ${parameter.candidateSourcePaths.join(', ')}`);
+      }
+      return {
+        ...recommendation,
+        exactness: recommendation.exactness === 'blocked' ? 'blocked' : 'inferred',
+        blockedBy,
+      };
+    }
+
+    return recommendation;
+  });
+}
+
 // ── Constraint Validation (domain knowledge) ──────────────────
 
 function validateConstraints(
@@ -1841,7 +1876,7 @@ function buildRecommendations(args: {
     });
   }
 
-  return finalizeRecommendations(recommendations);
+  return finalizeRecommendations(applyMappingTransparency(recommendations, normalizedSetup));
 }
 
 // ═══════════════════════════════════════════════════════════════

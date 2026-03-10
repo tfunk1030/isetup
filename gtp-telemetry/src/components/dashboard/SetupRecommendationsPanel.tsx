@@ -43,6 +43,12 @@ function exactnessToStatus(exactness: SetupRecommendation['exactness']): 'OK' | 
   return 'HIGH';
 }
 
+function mappingQualityLabel(quality: 'exact' | 'ordered' | 'ambiguous'): string {
+  if (quality === 'exact') return 'Exact mapping';
+  if (quality === 'ordered') return 'Ordered fallback';
+  return 'Ambiguous mapping';
+}
+
 export function SetupRecommendationsPanel({ analysis }: Props) {
   const { recommendations, dataQuality } = analysis;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -109,6 +115,11 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
         <p className="text-xs text-[var(--color-text-muted)]">
           {dataQuality.validLapCount} valid laps &bull; {dataQuality.optionalMissingChannels.length} optional channels missing
         </p>
+        {analysis.normalizedSetup.mappingWarnings.length > 0 && (
+          <p className="text-xs text-[var(--color-text-muted)] mt-2">
+            Setup mapping warnings: {analysis.normalizedSetup.mappingWarnings.length}
+          </p>
+        )}
       </div>
 
       {/* Severity summary bar */}
@@ -164,78 +175,101 @@ export function SetupRecommendationsPanel({ analysis }: Props) {
 
               {!collapsed.has(group.category) && (
                 <div className="space-y-3">
-                  {group.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-xl border border-[var(--color-card-border)] border-l-4 p-4 flex gap-3 hover:bg-[var(--color-surface)]/30 transition-colors"
-                      style={{ borderLeftColor: severityBorderColor(item.severity) }}
-                    >
-                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-bg-subtle)] flex items-center justify-center">
-                        <span className="font-mono text-xs font-bold text-[var(--color-text-dim)]">
-                          {item.priority}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <p className="text-sm font-semibold text-[var(--color-text)]">{item.title}</p>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <StatusBadge status={severityToStatus(item.severity)} />
-                            <StatusBadge status={confidenceToStatus(item.confidence)} />
-                            {item.exactness && <StatusBadge status={exactnessToStatus(item.exactness)} />}
-                          </div>
+                  {group.items.map((item) => {
+                    const mappedParameter = item.parameterKey
+                      ? analysis.normalizedSetup.parameters.find((parameter) => parameter.parameterKey === item.parameterKey)
+                      : undefined;
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-xl border border-[var(--color-card-border)] border-l-4 p-4 flex gap-3 hover:bg-[var(--color-surface)]/30 transition-colors"
+                        style={{ borderLeftColor: severityBorderColor(item.severity) }}
+                      >
+                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--color-bg-subtle)] flex items-center justify-center">
+                          <span className="font-mono text-xs font-bold text-[var(--color-text-dim)]">
+                            {item.priority}
+                          </span>
                         </div>
-                        <p className="text-sm text-[var(--color-text)] font-medium mb-2">{item.action}</p>
-                        <p className="text-xs text-[var(--color-text-muted)] mb-2.5">{item.rationale}</p>
-                        {item.exactness && (
-                          <p className="text-[11px] text-[var(--color-text-muted)] mb-2.5">
-                            {item.exactness === 'exact' && 'Exact change mapped from parsed setup.'}
-                            {item.exactness === 'inferred' && 'Directionally inferred from telemetry because the garage parameter could not be mapped exactly.'}
-                            {item.exactness === 'blocked' && 'Constrained by missing setup data or a sim limit; see notes below.'}
-                          </p>
-                        )}
-                        {item.evidence.length > 0 && (
-                          <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
-                            {item.evidence.slice(0, 3).map((ev) => (
-                              <li key={ev}>{ev}</li>
-                            ))}
-                          </ul>
-                        )}
-                        {item.specifics && item.specifics.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50 space-y-1.5">
-                            {item.specifics.map((s) => (
-                              <div key={s.parameter} className="flex items-center gap-2 text-xs">
-                                <span className="text-[var(--color-text-muted)] min-w-0 truncate">{s.parameter}:</span>
-                                <span className="font-mono text-[var(--color-text-dim)]">{s.current}</span>
-                                <span className="text-[var(--color-accent)] font-bold">&rarr;</span>
-                                <span className="font-mono font-semibold text-[var(--color-text)]">{s.target}</span>
-                                <span className="text-[var(--color-text-muted)]">({s.delta})</span>
-                              </div>
-                            ))}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <p className="text-sm font-semibold text-[var(--color-text)]">{item.title}</p>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <StatusBadge status={severityToStatus(item.severity)} />
+                              <StatusBadge status={confidenceToStatus(item.confidence)} />
+                              {item.exactness && <StatusBadge status={exactnessToStatus(item.exactness)} />}
+                            </div>
                           </div>
-                        )}
-                        {item.verify && item.verify.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
-                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Verify After Change</p>
+                          <p className="text-sm text-[var(--color-text)] font-medium mb-2">{item.action}</p>
+                          <p className="text-xs text-[var(--color-text-muted)] mb-2.5">{item.rationale}</p>
+                          {item.exactness && (
+                            <p className="text-[11px] text-[var(--color-text-muted)] mb-2.5">
+                              {item.exactness === 'exact' && 'Exact change mapped from parsed setup.'}
+                              {item.exactness === 'inferred' && 'Directionally inferred from telemetry because the garage parameter could not be mapped exactly.'}
+                              {item.exactness === 'blocked' && 'Constrained by missing setup data or a sim limit; see notes below.'}
+                            </p>
+                          )}
+                          {mappedParameter && (
+                            <div className="mb-2.5 p-2.5 rounded-lg bg-[var(--color-bg-subtle)] border border-[var(--color-card-border)]/60">
+                              <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Setup mapping</p>
+                              <p className="text-xs text-[var(--color-text-dim)]">
+                                {mappedParameter.displayName} &rarr; <span className="font-mono">{mappedParameter.sourcePath}</span>
+                              </p>
+                              <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                                {mappingQualityLabel(mappedParameter.mappingQuality)}
+                              </p>
+                              {mappedParameter.mappingQuality === 'ambiguous' && mappedParameter.candidateSourcePaths && mappedParameter.candidateSourcePaths.length > 1 && (
+                                <ul className="text-[11px] text-[var(--color-text-dim)] list-disc pl-4 mt-1 space-y-0.5">
+                                  {mappedParameter.candidateSourcePaths.map((path) => (
+                                    <li key={path} className="font-mono">{path}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                          {item.evidence.length > 0 && (
                             <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
-                              {item.verify.map((check) => (
-                                <li key={check}>{check}</li>
+                              {item.evidence.slice(0, 3).map((ev) => (
+                                <li key={ev}>{ev}</li>
                               ))}
                             </ul>
-                          </div>
-                        )}
-                        {item.blockedBy && item.blockedBy.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
-                            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Limits</p>
-                            <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
-                              {item.blockedBy.map((note) => (
-                                <li key={note}>{note}</li>
+                          )}
+                          {item.specifics && item.specifics.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50 space-y-1.5">
+                              {item.specifics.map((s) => (
+                                <div key={s.parameter} className="flex items-center gap-2 text-xs">
+                                  <span className="text-[var(--color-text-muted)] min-w-0 truncate">{s.parameter}:</span>
+                                  <span className="font-mono text-[var(--color-text-dim)]">{s.current}</span>
+                                  <span className="text-[var(--color-accent)] font-bold">&rarr;</span>
+                                  <span className="font-mono font-semibold text-[var(--color-text)]">{s.target}</span>
+                                  <span className="text-[var(--color-text-muted)]">({s.delta})</span>
+                                </div>
                               ))}
-                            </ul>
-                          </div>
-                        )}
+                            </div>
+                          )}
+                          {item.verify && item.verify.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
+                              <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Verify After Change</p>
+                              <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
+                                {item.verify.map((check) => (
+                                  <li key={check}>{check}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {item.blockedBy && item.blockedBy.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-[var(--color-card-border)]/50">
+                              <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1.5">Limits</p>
+                              <ul className="text-xs text-[var(--color-text-dim)] list-disc pl-4 space-y-1">
+                                {item.blockedBy.map((note) => (
+                                  <li key={note}>{note}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
