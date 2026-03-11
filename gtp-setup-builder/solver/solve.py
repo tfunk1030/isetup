@@ -18,6 +18,7 @@ from car_model import get_car
 from track_model.profile import TrackProfile
 from solver.rake_solver import RakeSolver
 from solver.heave_solver import HeaveSolver
+from solver.corner_spring_solver import CornerSpringSolver
 
 TRACKS_DIR = Path(__file__).parent.parent / "data" / "tracks"
 
@@ -106,15 +107,31 @@ def main():
         dynamic_rear_rh_mm=solution.dynamic_rear_rh_mm,
     )
 
+    if not args.json:
+        print(heave_solution.summary())
+
+    # ─── Step 3: Corner Springs ────────────────────────────────────────
+    print()
+    print("Running Step 3: Corner Springs...")
+    print()
+
+    corner_solver = CornerSpringSolver(car, track)
+    corner_solution = corner_solver.solve(
+        front_heave_nmm=heave_solution.front_heave_nmm,
+        rear_third_nmm=heave_solution.rear_third_nmm,
+        fuel_load_l=args.fuel,
+    )
+
     if args.json:
         import dataclasses
         output = {
             "step1_rake": dataclasses.asdict(solution),
             "step2_heave": dataclasses.asdict(heave_solution),
+            "step3_corner": dataclasses.asdict(corner_solution),
         }
         print(json.dumps(output, indent=2))
     else:
-        print(heave_solution.summary())
+        print(corner_solution.summary())
 
 
 if __name__ == "__main__":

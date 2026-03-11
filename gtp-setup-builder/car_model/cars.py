@@ -102,6 +102,68 @@ class HeaveSpringModel:
 
 
 @dataclass
+class CornerSpringModel:
+    """Corner spring physics model (torsion bars front, coil springs rear).
+
+    Corner springs contribute to BOTH heave stiffness AND roll stiffness.
+    Heave springs contribute to heave ONLY (geometric decoupling in roll).
+    ARBs contribute to roll ONLY.
+
+    Key relationships:
+    - Total heave stiffness per axle = heave_spring + 2 * corner_wheel_rate
+    - Natural frequency per corner = (1/2pi) * sqrt(k_wheel / m_corner)
+    - Heave-to-corner ratio should be 1.5-3.5x (SKILL.md guideline)
+    - Front torsion bar rate scales as OD^4: k = C_torsion * OD^4
+    - Rear coil spring rate is a direct N/mm value
+
+    The torsion bar constant C_torsion is calibrated from the verified setup
+    (OD = 13.9mm maps to a known wheel rate through the suspension geometry).
+    """
+    # Front torsion bar
+    front_torsion_c: float           # Calibration constant: k_wheel = C * OD^4
+    front_torsion_od_ref_mm: float   # Reference OD for calibration
+    front_torsion_od_range_mm: tuple[float, float] = (11.0, 16.0)
+    front_torsion_od_step_mm: float = 0.10  # Garage step size
+
+    # Rear coil spring
+    rear_spring_range_nmm: tuple[float, float] = (100.0, 300.0)
+    rear_spring_step_nmm: float = 10.0      # Garage step size
+
+    # Calibrated perch offsets
+    rear_spring_perch_baseline_mm: float = 30.0
+
+    # Track width (mm) for roll stiffness calculation
+    track_width_mm: float = 1600.0
+
+    # CG height estimate (mm) for lateral load transfer
+    cg_height_mm: float = 350.0
+
+    # Heave-to-corner ratio guideline
+    heave_corner_ratio_range: tuple[float, float] = (1.5, 3.5)
+
+    # Frequency isolation: corner freq should be < bump_freq / min_freq_ratio
+    min_freq_isolation_ratio: float = 2.5
+
+    def torsion_bar_rate(self, od_mm: float) -> float:
+        """Wheel rate (N/mm) from torsion bar OD."""
+        return self.front_torsion_c * od_mm ** 4
+
+    def torsion_bar_od_for_rate(self, k_wheel_nmm: float) -> float:
+        """Torsion bar OD (mm) needed for a target wheel rate."""
+        return (k_wheel_nmm / self.front_torsion_c) ** 0.25
+
+    def snap_torsion_od(self, od_mm: float) -> float:
+        """Snap OD to nearest garage step."""
+        step = self.front_torsion_od_step_mm
+        return round(round(od_mm / step) * step, 2)
+
+    def snap_rear_rate(self, k_nmm: float) -> float:
+        """Snap rear spring rate to nearest garage step."""
+        step = self.rear_spring_step_nmm
+        return round(round(k_nmm / step) * step, 0)
+
+
+@dataclass
 class RideHeightVariance:
     """Model for ride height oscillation at speed from track surface bumps.
 
@@ -171,6 +233,11 @@ class CarModel:
     # Heave spring physics model
     heave_spring: HeaveSpringModel = field(default_factory=lambda: HeaveSpringModel(
         front_m_eff_kg=176.1, rear_m_eff_kg=2867.5
+    ))
+
+    # Corner spring physics model
+    corner_spring: CornerSpringModel = field(default_factory=lambda: CornerSpringModel(
+        front_torsion_c=0.0008036, front_torsion_od_ref_mm=13.9
     ))
 
     # Available wing angles
@@ -265,6 +332,24 @@ BMW_M_HYBRID_V8 = CarModel(
         sigma_target_mm=10.0,   # SKILL.md: sigma > 5mm at >200 kph = unstable
         perch_offset_front_baseline_mm=-13.0,
         perch_offset_rear_baseline_mm=42.5,
+    ),
+    corner_spring=CornerSpringModel(
+        # Front torsion bar: OD 13.9mm -> ~30 N/mm wheel rate
+        # Calibrated: k_wheel = C * OD^4, C = 30.0 / 13.9^4 = 0.0008036
+        # This gives natural freq 1.66 Hz at 275 kg/corner (good for bumpy Sebring)
+        # Heave/corner ratio at heave=50: 50/30 = 1.7x (within 1.5-3.5x guideline)
+        front_torsion_c=0.0008036,
+        front_torsion_od_ref_mm=13.9,
+        front_torsion_od_range_mm=(11.0, 16.0),
+        front_torsion_od_step_mm=0.10,
+        # Rear coil spring: 160 N/mm baseline, raised to 170 for throttle oversteer
+        # Third/corner ratio: 530/170 = 3.1x (within 1.5-3.5x guideline)
+        # Natural freq at 170 N/mm: 3.7 Hz at 310 kg/corner
+        rear_spring_range_nmm=(100.0, 300.0),
+        rear_spring_step_nmm=10.0,
+        rear_spring_perch_baseline_mm=30.0,
+        track_width_mm=1600.0,
+        cg_height_mm=350.0,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
