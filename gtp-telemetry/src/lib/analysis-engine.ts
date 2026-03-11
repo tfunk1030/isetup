@@ -37,6 +37,7 @@ import type {
   NormalizedSetup,
   SetupRecommendation,
   RecommendationSpecific,
+  RecommendationCategory,
   RecommendationSeverity,
   TelemetryReasoningSignal,
   TyreCornerTemp,
@@ -51,7 +52,10 @@ import {
   getPhysicsVersionNote,
   isVisionTreadActive,
   getDamperSlopeRecommendation,
+  matchDiagnosticRules,
+  getCarThreshold,
 } from './domain-knowledge';
+import type { HandlingSymptom, CornerPhase } from './domain-knowledge';
 
 type Channels = Record<string, Float64Array | null>;
 const ENABLE_RULE_ENGINE_RECOMMENDATIONS = true;
@@ -841,6 +845,34 @@ function buildNumericSpecific(
   };
 }
 
+/** Classify average cornering speed into a speed regime for diagnostic rules */
+function detectSpeedRegime(
+  ch: Channels, recordCount: number, validMask: Uint8Array,
+): 'low' | 'mid' | 'high' | undefined {
+  const speed = ch.Speed;
+  const steering = ch.SteeringWheelAngle;
+  if (!speed || !steering) return undefined;
+
+  // Collect speeds where the car is actually cornering (steering angle > 15 degrees)
+  const corneringSpeeds: number[] = [];
+  for (let i = 0; i < recordCount; i++) {
+    if (!validMask[i]) continue;
+    const steerDeg = Math.abs(steering[i]) * (180 / Math.PI);
+    if (steerDeg > 15) {
+      corneringSpeeds.push(speedToKph(speed[i]));
+    }
+  }
+
+  if (corneringSpeeds.length < 10) return undefined;
+
+  const avgCorneringSpeed = corneringSpeeds.reduce((s, v) => s + v, 0) / corneringSpeeds.length;
+
+  // Classify: <120 km/h = low, 120-180 = mid, >180 = high
+  if (avgCorneringSpeed < 120) return 'low';
+  if (avgCorneringSpeed < 180) return 'mid';
+  return 'high';
+}
+
 function buildTelemetryReasoning(args: {
   carProfile?: CarProfile;
   tyreTempData: TyreTempLap[];
@@ -851,6 +883,8 @@ function buildTelemetryReasoning(args: {
   splitter: SplitterData | null;
   rideHeightData: RideHeightSample[];
   dataQuality: DataQualityReport;
+  /** Speed regime detected from cornering speed analysis */
+  speedRegime?: 'low' | 'mid' | 'high';
 }): TelemetryReasoningSignal[] {
   const {
     carProfile,
@@ -862,6 +896,7 @@ function buildTelemetryReasoning(args: {
     splitter,
     rideHeightData,
     dataQuality,
+    speedRegime,
   } = args;
   const signals: TelemetryReasoningSignal[] = [];
   const lastTemps = tyreTempData[tyreTempData.length - 1];
@@ -871,9 +906,10 @@ function buildTelemetryReasoning(args: {
     const frontAvg = (averageTyreCorner(lastTemps.LF) + averageTyreCorner(lastTemps.RF)) / 2;
     const rearAvg = (averageTyreCorner(lastTemps.LR) + averageTyreCorner(lastTemps.RR)) / 2;
     const axleDelta = frontAvg - rearAvg;
-    const midDirection = axleDelta >= 6
+    const balanceThreshold = getCarThreshold(carProfile?.id, 'balanceDeltaTriggerC', 6);
+    const midDirection = axleDelta >= balanceThreshold
       ? 'understeer-risk'
-      : axleDelta <= -6
+      : axleDelta <= -balanceThreshold
         ? 'oversteer-risk'
         : 'stable';
     const midSummary = midDirection === 'understeer-risk'
@@ -893,6 +929,7 @@ function buildTelemetryReasoning(args: {
         `Front-rear delta: ${axleDelta > 0 ? '+' : ''}${axleDelta.toFixed(1)}°C`,
       ],
       candidateParameterKeys: ['suspension.frontArbBlades', 'suspension.rearArbBlades', 'diff.rearPreload'],
+      speedRegime,
     });
 
     const brakeBias = aids['Brake Bias'];
@@ -920,6 +957,7 @@ function buildTelemetryReasoning(args: {
           `Bias delta: ${biasDelta > 0 ? '+' : ''}${biasDelta.toFixed(1)}%`,
         ],
         candidateParameterKeys: ['brakes.bias', 'suspension.frontArbBlades', 'platform.frontHeavePerch'],
+        speedRegime,
       });
     }
   }
@@ -931,7 +969,8 @@ function buildTelemetryReasoning(args: {
     const rearWear = (lastWear.LR.avg + lastWear.RR.avg) / 2;
     const rearWearLoss = frontWear - rearWear;
     const activeTc = (tc1 && !tc1.constant) || (tc2 && !tc2.constant);
-    const exitDirection = rearWearLoss >= 3 || activeTc ? 'traction-risk' : 'stable';
+    const wearThreshold = getCarThreshold(carProfile?.id, 'wearDeltaTractionRisk', 3);
+    const exitDirection = rearWearLoss >= wearThreshold || activeTc ? 'traction-risk' : 'stable';
     signals.push({
       id: 'exit-traction',
       phase: 'exit',
@@ -947,6 +986,7 @@ function buildTelemetryReasoning(args: {
         ...(tc2 ? [`TC2 range: ${tc2.min.toFixed(1)}-${tc2.max.toFixed(1)}`] : []),
       ],
       candidateParameterKeys: ['diff.rearPreload', 'suspension.rearArbBlades', 'alignment.rearCamber'],
+      speedRegime: 'low', // Exit traction is typically a low-speed phenomenon
     });
   }
 
@@ -954,9 +994,10 @@ function buildTelemetryReasoning(args: {
     ? stdDev(rideHeightData.map((sample) => (sample.LF + sample.RF) / 2))
     : 0;
   const maxShockPeak = Object.values(shockVelStats).reduce((peak, stats) => Math.max(peak, stats.peak), 0);
-  const platformRisk = bottoming.clean >= RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_WARN
+  const shockWarnThreshold = getCarThreshold(carProfile?.id, 'shockPeakWarnMmS', RECOMMENDATION.SHOCK_PEAK_WARN_MM_S);
+  const platformRisk = bottoming.clean >= getCarThreshold(carProfile?.id, 'bottomingWarnEvents', RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_WARN)
     || (splitter?.minHeight ?? 999) <= RECOMMENDATION.SPLITTER_MIN_HEIGHT_WARN_MM
-    || maxShockPeak >= RECOMMENDATION.SHOCK_PEAK_WARN_MM_S
+    || maxShockPeak >= shockWarnThreshold
     || rideHeightSigma >= 4.5;
   signals.push({
     id: 'platform-stability',
@@ -980,7 +1021,8 @@ function buildTelemetryReasoning(args: {
       const temp = lastTemps[corner];
       const spread = Math.abs(temp.I - temp.O);
       const crownDelta = temp.M - (temp.O + temp.I) / 2;
-      if (spread < RECOMMENDATION.TYRE_TEMP_SPREAD_WARN_C && Math.abs(crownDelta) < RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C) {
+      const tyreSpreadThreshold = getCarThreshold(carProfile?.id, 'tyreTempSpreadWarnC', RECOMMENDATION.TYRE_TEMP_SPREAD_WARN_C);
+      if (spread < tyreSpreadThreshold && Math.abs(crownDelta) < RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C) {
         continue;
       }
       signals.push({
@@ -1021,6 +1063,49 @@ function formatAidsContext(carProfile?: CarProfile): string {
 }
 
 type DraftRecommendation = Omit<SetupRecommendation, 'priority'>;
+
+/** Map telemetry reasoning direction to diagnostic rule symptom */
+function mapReasoningToSymptom(direction: string): HandlingSymptom | null {
+  switch (direction) {
+    case 'understeer-risk': return 'understeer';
+    case 'oversteer-risk': return 'oversteer';
+    case 'traction-risk': return 'traction-loss';
+    case 'bottoming-risk': return 'bottoming';
+    default: return null;
+  }
+}
+
+/** Map diagnostic rule parameter names to normalized setup keys */
+function findNormalizedKey(paramName: string): string | undefined {
+  const MAP: Record<string, string> = {
+    frontArbSize: 'suspension.frontArbSize',
+    frontArbBlades: 'suspension.frontArbBlades',
+    rearArbSize: 'suspension.rearArbSize',
+    rearArbBlades: 'suspension.rearArbBlades',
+    rearDiffPreload: 'diff.rearPreload',
+    brakeBias: 'brakes.bias',
+    rearWingAngle: 'aero.rearWingAngle',
+    frontPushrod: 'platform.frontPushrod',
+    frontHeaveSpring: 'platform.frontHeaveSpring',
+    rearThirdSpring: 'platform.rearHeaveSpring',
+    dcTractionControl: 'aids.tc1',
+    frontHSComp: 'dampers.LF.hsComp',
+    rearHSComp: 'dampers.LR.hsComp',
+    frontHSCompSlope: 'dampers.LF.hsSlope',
+    frontHeavePerch: 'platform.frontHeavePerch',
+    rearHeavePerch: 'platform.rearHeavePerch',
+    rearPushrod: 'platform.rearPushrod',
+    frontCamber: 'alignment.frontCamber',
+    rearCamber: 'alignment.rearCamber',
+    frontToe: 'alignment.frontToe',
+    rearToe: 'alignment.rearToe',
+  };
+  return MAP[paramName];
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 function severityWeight(severity: RecommendationSeverity): number {
   if (severity === 'CRITICAL') return 0;
@@ -1232,7 +1317,8 @@ function buildRecommendations(args: {
   } = args;
 
   const cleanBottoming = bottoming.clean;
-  if (cleanBottoming >= RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_WARN) {
+  const bottomingWarnThreshold = getCarThreshold(carProfile?.id, 'bottomingWarnEvents', RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_WARN);
+  if (cleanBottoming >= bottomingWarnThreshold) {
     const critical = cleanBottoming >= RECOMMENDATION.PLATFORM_CLEAN_BOTTOMING_CRITICAL;
     const avgFrontRH = rideHeightData.length > 0
       ? rideHeightData.reduce((s, r) => s + (r.LF + r.RF) / 2, 0) / rideHeightData.length
@@ -1314,7 +1400,7 @@ function buildRecommendations(args: {
   }
 
   for (const [corner, stats] of Object.entries(shockVelStats)) {
-    if (stats.peak >= RECOMMENDATION.SHOCK_PEAK_WARN_MM_S) {
+    if (stats.peak >= getCarThreshold(carProfile?.id, 'shockPeakWarnMmS', RECOMMENDATION.SHOCK_PEAK_WARN_MM_S)) {
       const critical = stats.peak >= RECOMMENDATION.SHOCK_PEAK_CRITICAL_MM_S;
       const overshoot = Math.round(stats.peak - SHOCK_VELOCITY.EXTREME);
       const hsComp = getNormalizedParameter(normalizedSetup, `dampers.${corner}.hsComp`);
@@ -1899,6 +1985,76 @@ function buildRecommendations(args: {
     });
   }
 
+  // ── Diagnostic Rule Integration ──────────────────────────────
+  // Map telemetry reasoning signals to diagnostic rules for
+  // handling-balance recommendations (understeer/oversteer/instability)
+  const diagnosticParamKeys = new Set(recommendations.map(r => r.parameterKey).filter(Boolean));
+
+  for (const signal of telemetryReasoning) {
+    if (signal.direction === 'stable' || signal.direction === 'temperature-risk' || signal.direction === 'mixed') continue;
+
+    const symptom = mapReasoningToSymptom(signal.direction);
+    if (!symptom) continue;
+
+    const phase = (signal.phase === 'entry' || signal.phase === 'mid' || signal.phase === 'exit')
+      ? signal.phase as CornerPhase
+      : undefined;
+
+    const rules = matchDiagnosticRules(symptom, phase, signal.speedRegime);
+    for (const rule of rules) {
+      // Skip if we already have a recommendation targeting the same primary parameter
+      if (rule.primaryParameters.some(pk => diagnosticParamKeys.has(pk))) continue;
+
+      const category = symptom === 'bottoming' ? 'PLATFORM'
+        : symptom === 'traction-loss' ? 'DYNAMICS'
+        : rule.primaryParameters.some(p => p.includes('Arb') || p.includes('Diff')) ? 'DYNAMICS'
+        : rule.primaryParameters.some(p => p.includes('Wing') || p.includes('Heave') || p.includes('Third')) ? 'AERO'
+        : rule.primaryParameters.some(p => p.includes('bias')) ? 'BRAKES'
+        : 'DYNAMICS';
+
+      // Try to build specifics from the first mappable primary parameter
+      const specifics: RecommendationSpecific[] = [];
+      let primaryParamKey: string | undefined;
+      for (const paramName of rule.primaryParameters) {
+        const mapped = findNormalizedKey(paramName);
+        if (!mapped) continue;
+        const param = getNormalizedParameter(normalizedSetup, mapped);
+        if (!param) continue;
+        primaryParamKey = mapped;
+        specifics.push({
+          parameter: param.displayName,
+          current: param.displayValue,
+          target: rule.magnitude,
+          delta: rule.direction.split(',')[0],
+        });
+        break; // One specific per diagnostic rule
+      }
+
+      recommendations.push({
+        id: `diag-${rule.id}`,
+        category: category as RecommendationCategory,
+        title: `${capitalize(symptom)} — ${phase || 'general'} phase`,
+        action: rule.direction,
+        rationale: rule.tradeoff,
+        confidence: rule.confidence === 'HIGH' ? 'HIGH' : 'MEDIUM',
+        severity: 'WARNING',
+        evidence: [
+          signal.summary,
+          ...signal.evidence.slice(0, 2),
+          `Verify: ${rule.verifyChannel}`,
+        ],
+        specifics: specifics.length > 0 ? specifics : undefined,
+        parameterKey: primaryParamKey,
+        exactness: specifics.length > 0 ? 'inferred' : 'blocked',
+        verify: [rule.verifyChannel],
+        source: 'diagnostic-rule',
+      });
+
+      // Track the parameter to avoid duplicates
+      if (primaryParamKey) diagnosticParamKeys.add(primaryParamKey);
+    }
+  }
+
   return finalizeRecommendations(recommendations, normalizedSetup);
 }
 
@@ -1987,6 +2143,7 @@ export function analyzeSession(
   const dataQuality = buildDataQualityReport(parsed, validLaps, parserWarnings);
   const cs = parsed.sessionInfo?.CarSetup || {};
   const normalizedSetup = normalizeSetup(cs as Record<string, unknown>, carProfile);
+  const speedRegime = detectSpeedRegime(ch, parsed.recordCount, validMask);
   const telemetryReasoning = buildTelemetryReasoning({
     carProfile,
     tyreTempData,
@@ -1997,6 +2154,7 @@ export function analyzeSession(
     splitter,
     rideHeightData,
     dataQuality,
+    speedRegime,
   });
   const recommendations = ENABLE_RULE_ENGINE_RECOMMENDATIONS
     ? buildRecommendations({

@@ -39,9 +39,6 @@ export function DriverAidsPanel({ analysis }: Props) {
           </div>
         </div>
       ))}
-      <p className="text-[var(--color-text-muted)] text-[11px] mt-4">
-        Changing aids = warning. If RARB changes correlate with speed bands, that's intentional live management.
-      </p>
     </Card>
   );
 }

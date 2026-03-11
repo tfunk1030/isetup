@@ -33,10 +33,6 @@ export function ShockVelocityPanel({ analysis }: Props) {
           </div>
         ))}
       </div>
-      <p className="text-[var(--color-text-muted)] text-[11px] mt-4">
-        Penske: &lt;{SHOCK_VELOCITY.LOW_SPEED_MAX} mm/s = low-speed damper regime.
-        &gt;{SHOCK_VELOCITY.EXTREME} mm/s = extreme events.
-      </p>
     </Card>
   );
 }

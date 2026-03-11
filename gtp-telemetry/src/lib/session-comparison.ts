@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type { SessionAnalysis } from './types';
-import type { SessionMetricSnapshot, SessionRecord, RecommendationOutcome } from './session-memory';
+import type { SessionRecord, RecommendationOutcome } from './session-memory';
 import { extractMetrics } from './session-memory';
 import { compareSetups } from './setup-compare';
 import type { CompareResult } from './types';

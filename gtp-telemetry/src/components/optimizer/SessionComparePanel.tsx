@@ -1,10 +1,7 @@
 import { useMemo } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
   ArrowRight,
   CheckCircle2,
-  Clock,
   Equal,
   GitCompare,
   History,
@@ -14,7 +11,6 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Card } from '../shared/Card';
-import { StatusBadge } from '../shared/StatusBadge';
 import type { SessionComparisonResult, DeltaVerdict, MetricDelta } from '../../lib/session-comparison';
 import type { SessionRecord, RecommendationOutcome } from '../../lib/session-memory';
 

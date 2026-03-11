@@ -272,7 +272,7 @@ export interface SetupRecommendation {
   exactness?: RecommendationExactness;
   verify?: string[];
   blockedBy?: string[];
-  source?: 'rule-engine';
+  source?: 'rule-engine' | 'diagnostic-rule';
 }
 
 export interface DataQualityReport {
@@ -347,6 +347,8 @@ export interface TelemetryReasoningSignal {
   confidence: ConfidenceLevel;
   evidence: string[];
   candidateParameterKeys: string[];
+  /** Speed regime for more precise diagnostic rule matching */
+  speedRegime?: 'low' | 'mid' | 'high';
 }
 
 export interface AIRecommendationItem {

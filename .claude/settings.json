@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"require\\(''fs''\\).writeFileSync\\(''C:/Users/tfunk/isetup/.claude/cache/agents/scout/latest-output.md'', ''test''\\); console.log\\(''ok''\\)\")",
+      "Bash(npm run:*)"
+    ]
+  }
+}

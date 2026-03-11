@@ -1,12 +1,16 @@
+import { useMemo } from 'react';
 import {
   GitCompare,
+  History,
   Stethoscope,
 } from 'lucide-react';
 import { DropZone } from '../upload/DropZone';
 import { useSessionStore } from '../../store/session-store';
+import { getRecentCombos } from '../../lib/session-memory';
 
 export function LandingScreen() {
   const { setAppView } = useSessionStore();
+  const recentCombos = useMemo(() => getRecentCombos(3), []);
 
   return (
     <div className="flex min-h-[calc(100vh-56px)] items-start justify-center pt-[12vh]">
@@ -54,6 +58,37 @@ export function LandingScreen() {
             </span>
           </button>
         </div>
+
+        {/* Recent sessions */}
+        {recentCombos.length > 0 && (
+          <div className="rounded-xl border border-[var(--color-card-border)] bg-[var(--color-surface)] p-4">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-[var(--color-text-muted)]">
+              <History className="h-3.5 w-3.5" />
+              Recent Sessions
+            </div>
+            <div className="space-y-2">
+              {recentCombos.map((combo) => (
+                <div
+                  key={`${combo.car}__${combo.track}`}
+                  className="flex items-center justify-between rounded-lg bg-[var(--color-bg-subtle)] px-3 py-2"
+                >
+                  <div>
+                    <p className="text-xs font-medium text-[var(--color-text)]">{combo.car}</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">{combo.track}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-mono text-[var(--color-accent)]">
+                      {combo.bestLap != null ? `${combo.bestLap.toFixed(3)}s` : '—'}
+                    </p>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">
+                      {combo.sessions} session{combo.sessions !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Supported cars — minimal */}
         <p className="text-center text-xs text-[var(--color-text-muted)]">

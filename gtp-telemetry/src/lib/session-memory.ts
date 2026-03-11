@@ -761,6 +761,46 @@ export function getMemoryStats(): { combos: number; totalSessions: number; total
 }
 
 /**
+ * Get recent car+track combos with summary info, sorted by most recent session.
+ */
+export function getRecentCombos(limit = 3): Array<{
+  car: string;
+  track: string;
+  sessions: number;
+  bestLap: number | null;
+  lastTimestamp: number;
+}> {
+  const combos: Array<{
+    car: string; track: string; sessions: number;
+    bestLap: number | null; lastTimestamp: number;
+  }> = [];
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(STORAGE_PREFIX)) continue;
+    try {
+      const sessions = JSON.parse(localStorage.getItem(key) || '[]') as SessionRecord[];
+      if (sessions.length === 0) continue;
+      const last = sessions[sessions.length - 1];
+      const bestLap = sessions.reduce((best, s) => {
+        const lap = s.metrics?.bestLapTime;
+        return lap != null && (best == null || lap < best) ? lap : best;
+      }, null as number | null);
+      combos.push({
+        car: last.car,
+        track: last.track,
+        sessions: sessions.length,
+        bestLap,
+        lastTimestamp: last.timestamp,
+      });
+    } catch { /* ignore */ }
+  }
+
+  combos.sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+  return combos.slice(0, limit);
+}
+
+/**
  * Clear all memory (for testing or reset).
  */
 export function clearAllMemory(): void {

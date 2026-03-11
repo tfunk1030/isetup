@@ -47,36 +47,30 @@ export function TyreTempsPanel({ analysis }: Props) {
         </div>
       </Card>
 
-      {last && ['LF', 'RF', 'LR', 'RR'].map((corner) => {
-        const d = last[corner as keyof typeof last] as { O: number; M: number; I: number };
-        const avg = (d.O + d.M + d.I) / 3;
-        const midVsEdges = d.M - (d.O + d.I) / 2;
-
-        return (
-          <Card key={corner} title={`${corner} Detail (Lap ${last.lap})`} icon={<Flame className="w-4 h-4" />}>
-            <MetricRow label="Outer" value={d.O.toFixed(1)} unit={'\u00B0C'} />
-            <MetricRow label="Middle" value={d.M.toFixed(1)} unit={'\u00B0C'} />
-            <MetricRow label="Inner" value={d.I.toFixed(1)} unit={'\u00B0C'} />
-            <MetricRow
-              label="Average"
-              value={avg.toFixed(1)}
-              unit={'\u00B0C'}
-              status={avg < TYRE_TEMP.COLD ? 'COLD' : avg <= TYRE_TEMP.HOT ? 'OK' : 'HOT'}
-            />
-            <MetricRow label="I-O Spread" value={(d.I - d.O).toFixed(1)} unit={'\u00B0C'} />
-            <MetricRow
-              label="Shape"
-              value={
-                midVsEdges > RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
-                  ? 'Crown (high psi)'
-                  : midVsEdges < -RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
-                    ? 'Cup (low psi)'
-                    : 'Good'
-              }
-            />
-          </Card>
-        );
-      })}
+      {last && (
+        <Card title={`Contact Patch Shape (Lap ${last.lap})`} icon={<Flame className="w-4 h-4" />}>
+          <div className="grid grid-cols-2 gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+            {(['LF', 'RF', 'LR', 'RR'] as const).map((corner) => {
+              const d = last[corner] as { O: number; M: number; I: number };
+              const avg = (d.O + d.M + d.I) / 3;
+              const midVsEdges = d.M - (d.O + d.I) / 2;
+              const shape = midVsEdges > RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
+                ? 'Crown (high psi)'
+                : midVsEdges < -RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
+                  ? 'Cup (low psi)'
+                  : 'Good';
+              return (
+                <div key={corner} className="rounded-lg bg-[var(--color-bg-subtle)] p-3">
+                  <p className="mb-1 text-xs font-semibold text-[var(--color-text)]">{corner}</p>
+                  <MetricRow label="Avg" value={avg.toFixed(1)} unit={'\u00B0C'} status={avg < TYRE_TEMP.COLD ? 'COLD' : avg <= TYRE_TEMP.HOT ? 'OK' : 'HOT'} />
+                  <MetricRow label="Shape" value={shape} />
+                  <MetricRow label="Spread" value={(d.I - d.O).toFixed(1)} unit={'\u00B0C'} />
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </>
   );
 }

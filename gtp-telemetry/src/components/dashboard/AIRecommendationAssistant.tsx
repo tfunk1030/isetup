@@ -90,7 +90,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
   const [debugReport, setDebugReport] = useState<AIProviderDebugReport | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(true);
   const runIdRef = useRef(0);
-  const { aiDriverFeedback: driverFeedback, setAIDriverFeedback } = useSessionStore();
+  const { aiDriverFeedback: driverFeedback, setAIDriverFeedback, attachAIBrief } = useSessionStore();
 
   const configured = hasAIRecommendationConfig();
   const mode = getAIRecommendationMode();
@@ -110,6 +110,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
       const result = await generateAISetupBrief(analysis, feedback);
       if (runId !== runIdRef.current) return;
       setBrief(result);
+      attachAIBrief(result);
       setDebugReport(getLastAIProviderDebugReport());
     } catch (err) {
       if (runId !== runIdRef.current) return;
@@ -121,7 +122,7 @@ export function AIRecommendationAssistant({ analysis }: Props) {
         setLoading(false);
       }
     }
-  }, [analysis, driverFeedback]);
+  }, [analysis, driverFeedback, attachAIBrief]);
 
   useEffect(() => {
     runIdRef.current += 1;
@@ -237,17 +238,16 @@ export function AIRecommendationAssistant({ analysis }: Props) {
         </span>
       </div>
       {debugReport && (
-        <div className="mb-5 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-            Model Execution
-          </p>
-          <p className="text-xs text-[var(--color-text-dim)]">
-            Analyzed models ({attemptedModels.length}): {attemptedModels.length > 0 ? attemptedModels.join(', ') : 'none'}
-          </p>
-          <p className="text-xs text-[var(--color-text-dim)]">
-            Ran successfully ({ranModels.length}): {ranModels.length > 0 ? ranModels.join(', ') : 'none'}
-          </p>
-        </div>
+        <details className="mb-5">
+          <summary className="cursor-pointer text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+            Model execution details ({ranModels.length}/{attemptedModels.length} succeeded)
+          </summary>
+          <div className="mt-2 rounded-xl border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-3">
+            <p className="text-xs text-[var(--color-text-dim)]">
+              Models: {attemptedModels.length > 0 ? attemptedModels.join(', ') : 'none'}
+            </p>
+          </div>
+        </details>
       )}
 
       {!configured && (
@@ -258,17 +258,6 @@ export function AIRecommendationAssistant({ analysis }: Props) {
 
       {loading && <LoadingSkeleton />}
 
-      {!loading && !brief && !error && configured && (
-        <div className="mb-4 rounded-xl border border-dashed border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-5 text-center">
-          <MessageSquare className="mx-auto mb-2 h-5 w-5 text-[var(--color-text-muted)]" />
-          <p className="text-sm text-[var(--color-text-muted)]">
-            Add driver feedback above, then press <strong className="text-[var(--color-text)]">Run AI Analysis</strong> to start.
-          </p>
-          <p className="mt-1 text-[11px] text-[var(--color-text-dim)]">
-            Feedback is optional — you can run the analysis without it.
-          </p>
-        </div>
-      )}
 
       {error && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-[var(--color-red)]/20 bg-[var(--color-red)]/5 p-4">
@@ -354,59 +343,43 @@ export function AIRecommendationAssistant({ analysis }: Props) {
                             <span className="ml-2 text-[var(--color-text-muted)]">({item.delta})</span>
                           </p>
                           <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">{item.reason}</p>
-                          {item.currentSourcePath && (
-                            <p className="mt-1.5 text-[11px] text-[var(--color-text-muted)]">
-                              Garage path: <span className="font-mono text-[var(--color-text-dim)]">{item.currentSourcePath}</span>
-                              {item.mappingQuality && item.mappingConfidence && (
-                                <span> ({item.mappingQuality}, {item.mappingConfidence})</span>
-                              )}
-                            </p>
-                          )}
-                          {item.mappingAmbiguities && item.mappingAmbiguities.length > 0 && (
-                            <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                              Alternative matches: <span className="font-mono text-[var(--color-text-dim)]">{item.mappingAmbiguities.join(', ')}</span>
-                            </p>
-                          )}
                         </div>
                       </div>
 
-                      {item.evidence.length > 0 && (
-                        <ul className="mb-2 ml-8 space-y-1">
-                          {item.evidence.map((evidence) => (
-                            <li key={evidence} className="flex items-start gap-2 text-xs text-[var(--color-text-dim)]">
-                              <span className="mt-0.5 text-[var(--color-accent)]">&bull;</span>
-                              {evidence}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-
-                      {item.verification.length > 0 && (
-                        <div className="mb-2 ml-8 text-xs text-[var(--color-text-dim)]">
-                          <p className="mb-1 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Verify After Change</p>
-                          <ul className="space-y-1">
-                            {item.verification.map((check) => (
-                              <li key={check} className="flex items-start gap-2">
-                                <span className="mt-0.5 text-[var(--color-text-muted)]">&bull;</span>
-                                {check}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {item.assumptions.length > 0 && (
-                        <div className="ml-8 text-xs text-[var(--color-text-muted)]">
-                          <p className="mb-1 text-[10px] uppercase tracking-wider">Limits / Assumptions</p>
-                          <ul className="space-y-1">
-                            {item.assumptions.map((assumption) => (
-                              <li key={assumption} className="flex items-start gap-2">
-                                <span className="mt-0.5">&bull;</span>
-                                {assumption}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                      {(item.evidence.length > 0 || item.verification.length > 0 || item.currentSourcePath) && (
+                        <details className="ml-8 mt-1">
+                          <summary className="cursor-pointer text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)]">Details</summary>
+                          <div className="mt-2 space-y-2">
+                            {item.evidence.length > 0 && (
+                              <ul className="space-y-1">
+                                {item.evidence.map((evidence) => (
+                                  <li key={evidence} className="flex items-start gap-2 text-xs text-[var(--color-text-dim)]">
+                                    <span className="mt-0.5 text-[var(--color-accent)]">&bull;</span>
+                                    {evidence}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {item.verification.length > 0 && (
+                              <div className="text-xs text-[var(--color-text-dim)]">
+                                <p className="mb-1 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">Verify After Change</p>
+                                <ul className="space-y-1">
+                                  {item.verification.map((check) => (
+                                    <li key={check} className="flex items-start gap-2">
+                                      <span className="mt-0.5 text-[var(--color-text-muted)]">&bull;</span>
+                                      {check}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {item.currentSourcePath && (
+                              <p className="text-[11px] text-[var(--color-text-muted)]">
+                                Garage: <span className="font-mono text-[var(--color-text-dim)]">{item.currentSourcePath}</span>
+                              </p>
+                            )}
+                          </div>
+                        </details>
                       )}
                     </div>
                   );
@@ -415,52 +388,67 @@ export function AIRecommendationAssistant({ analysis }: Props) {
             )}
           </BriefSection>
 
-          <BriefSection icon={<Eye className="h-3.5 w-3.5" />} title="Watch Items">
-            {brief.watchItems.length === 0 ? (
-              <p className="text-xs text-[var(--color-text-muted)]">
-                No additional watch items were returned by the AI models.
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {brief.watchItems.map((item) => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-[var(--color-text-dim)]">
-                    <span className="mt-0.5 text-[var(--color-accent)]">&bull;</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </BriefSection>
-
-          {brief.reasoning.length > 0 && (
-            <BriefSection icon={<Brain className="h-3.5 w-3.5" />} title="Reasoning">
-              <ul className="space-y-2">
-                {brief.reasoning.map((item) => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-[var(--color-text-dim)]">
-                    <span className="mt-0.5 text-[var(--color-text-muted)]">&bull;</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </BriefSection>
+          {(brief.watchItems.length > 0 || brief.reasoning.length > 0 || brief.disagreements.length > 0) && (
+            <details className="rounded-xl border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-4">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+                Additional Analysis
+                <span className="ml-2 font-normal normal-case">
+                  ({[
+                    brief.watchItems.length > 0 && `${brief.watchItems.length} watch`,
+                    brief.reasoning.length > 0 && `${brief.reasoning.length} reasoning`,
+                    brief.disagreements.length > 0 && `${brief.disagreements.length} notes`,
+                  ].filter(Boolean).join(', ')})
+                </span>
+              </summary>
+              <div className="mt-3 space-y-4">
+                {brief.watchItems.length > 0 && (
+                  <div>
+                    <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                      <Eye className="h-3 w-3 text-[var(--color-accent)]" /> Watch Items
+                    </p>
+                    <ul className="space-y-1">
+                      {brief.watchItems.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-xs text-[var(--color-text-dim)]">
+                          <span className="mt-0.5 text-[var(--color-accent)]">&bull;</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {brief.reasoning.length > 0 && (
+                  <div>
+                    <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                      <Brain className="h-3 w-3 text-[var(--color-accent)]" /> Reasoning
+                    </p>
+                    <ul className="space-y-1">
+                      {brief.reasoning.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-xs text-[var(--color-text-dim)]">
+                          <span className="mt-0.5 text-[var(--color-text-muted)]">&bull;</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {brief.disagreements.length > 0 && (
+                  <div>
+                    <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                      <AlertTriangle className="h-3 w-3 text-[var(--color-accent)]" /> Disagreements
+                    </p>
+                    <ul className="space-y-1">
+                      {brief.disagreements.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-xs text-[var(--color-text-muted)]">
+                          <span className="mt-0.5">&bull;</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </details>
           )}
-
-          {brief.disagreements.length > 0 && (
-            <BriefSection icon={<AlertTriangle className="h-3.5 w-3.5" />} title="Model Disagreements / Assumptions">
-              <ul className="space-y-2">
-                {brief.disagreements.map((item) => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-[var(--color-text-muted)]">
-                    <span className="mt-0.5">&bull;</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </BriefSection>
-          )}
-
-          <p className="px-1 text-xs italic text-[var(--color-text-muted)]">
-            {brief.confidenceNote}
-          </p>
         </div>
       )}
     </Card>

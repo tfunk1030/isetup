@@ -121,6 +121,60 @@ export interface DamperSlopeRule {
   rationale: string;
 }
 
+// ── Per-Car Threshold Overrides ────────────────────────────────
+// Cars have different sensitivities — use these to calibrate thresholds
+// instead of applying identical values across all 5 cars.
+
+export interface CarThresholdOverrides {
+  /** Bottoming event count before warning (default 8) */
+  bottomingWarnEvents?: number;
+  /** Shock peak velocity warning threshold mm/s (default 500) */
+  shockPeakWarnMmS?: number;
+  /** Tyre temp inner-outer spread warning °C (default 12) */
+  tyreTempSpreadWarnC?: number;
+  /** Front-rear axle temp delta to trigger balance warning °C (default 6) */
+  balanceDeltaTriggerC?: number;
+  /** Tyre wear rear-front delta for traction-risk trigger % (default 3) */
+  wearDeltaTractionRisk?: number;
+}
+
+export const CAR_THRESHOLD_OVERRIDES: Record<string, CarThresholdOverrides> = {
+  porsche: {
+    // Most aero-platform sensitive (rank 1) — detect bottoming earlier
+    bottomingWarnEvents: 5,
+    shockPeakWarnMmS: 450,
+  },
+  bmw: {
+    // Sensitive to rear ARB, snappy on cold tyres, pressure rise is aggressive
+    tyreTempSpreadWarnC: 10,
+    balanceDeltaTriggerC: 5,
+  },
+  acura: {
+    // Snap oversteer prone, diff is THE parameter, very-high diff sensitivity
+    tyreTempSpreadWarnC: 10,
+    balanceDeltaTriggerC: 4,
+    wearDeltaTractionRisk: 2,
+  },
+  ferrari: {
+    // Wider operating band, unique indexed parameter space
+    tyreTempSpreadWarnC: 14,
+    balanceDeltaTriggerC: 7,
+  },
+  // cadillac uses defaults — most forgiving car
+};
+
+/** Get a per-car threshold, falling back to the default if no override exists */
+export function getCarThreshold(
+  carId: string | undefined,
+  key: keyof CarThresholdOverrides,
+  defaultValue: number,
+): number {
+  if (!carId) return defaultValue;
+  const overrides = CAR_THRESHOLD_OVERRIDES[carId];
+  if (!overrides) return defaultValue;
+  return overrides[key] ?? defaultValue;
+}
+
 // ── Sim Constraints ────────────────────────────────────────────
 
 export const SIM_CONSTRAINTS: SimConstraint[] = [

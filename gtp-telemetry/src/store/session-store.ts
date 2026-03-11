@@ -6,10 +6,10 @@ import { detectTrack, getDefaultTrackProfile } from '../lib/track-profiles';
 import {
   saveSession,
   getSessionHistory,
-  extractMetrics,
+  attachRecommendations,
 } from '../lib/session-memory';
 import { compareSessionAnalyses } from '../lib/session-comparison';
-import type { SessionAnalysis, CarProfile, TrackProfile, IBTParsed } from '../lib/types';
+import type { SessionAnalysis, CarProfile, TrackProfile, IBTParsed, AISetupBrief } from '../lib/types';
 import type { AppView, EvidencePanelId, WorkspaceTab } from '../lib/ui-types';
 import type { SessionRecord } from '../lib/session-memory';
 import type { SessionComparisonResult } from '../lib/session-comparison';
@@ -53,6 +53,7 @@ interface SessionStore {
   collapseAllEvidence: () => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
   setAIDriverFeedback: (feedback: string) => void;
+  attachAIBrief: (brief: AISetupBrief) => void;
 }
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
@@ -257,4 +258,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setWorkspaceTab: (tab: WorkspaceTab) => set({ workspaceTab: tab }),
 
   setAIDriverFeedback: (feedback: string) => set({ aiDriverFeedback: feedback }),
+
+  attachAIBrief: (brief: AISetupBrief) => {
+    const { currentSessionRecord } = get();
+    if (!currentSessionRecord) return;
+    attachRecommendations(
+      currentSessionRecord.id,
+      currentSessionRecord.car,
+      currentSessionRecord.track,
+      brief,
+    );
+  },
 }));

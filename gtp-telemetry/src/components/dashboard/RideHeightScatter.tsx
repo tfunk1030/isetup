@@ -32,16 +32,9 @@ export function RideHeightScatter({ analysis }: Props) {
           </ScatterChart>
         </ResponsiveContainer>
       </div>
-      <div className="grid grid-cols-2 gap-4 mt-4">
-        <div>
-          <MetricRow label="Clean-Track Bottoming" value={analysis.bottoming.clean} status={analysis.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
-          <MetricRow label="Kerb Bottoming" value={analysis.bottoming.kerb} />
-        </div>
-        <div className="flex items-center">
-          <p className="text-[var(--color-text-muted)] text-[11px]">
-            Kerb strikes are driving choices, not setup failures. Only clean-track bottoming indicates a platform problem.
-          </p>
-        </div>
+      <div className="mt-4">
+        <MetricRow label="Clean-Track Bottoming" value={analysis.bottoming.clean} status={analysis.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
+        <MetricRow label="Kerb Bottoming" value={analysis.bottoming.kerb} />
       </div>
     </Card>
   );
