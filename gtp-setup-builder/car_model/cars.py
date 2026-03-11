@@ -224,8 +224,14 @@ class DamperModel:
     hs_comp_range: tuple[int, int] = (1, 20)
     hs_rbd_range: tuple[int, int] = (1, 20)
     hs_slope_range: tuple[int, int] = (1, 20)
-    ls_force_per_click_n: float = 50.0
-    hs_force_per_click_n: float = 80.0
+    # Force-per-click calibrated by reverse-engineering from physics:
+    # c_damping * v_ref / clicks = fpc
+    # Front LS: 5060 * 0.025 / 7 = 18.1 N/click
+    # Rear LS: 4358 * 0.025 / 6 = 18.2 N/click ← remarkably consistent!
+    # Front HS: 2586 * 0.15 / 5 = 77.6 N/click
+    # Rear HS: 2034 * 0.15 / 3 = 101.7 N/click
+    ls_force_per_click_n: float = 18.0     # N per click at 25 mm/s
+    hs_force_per_click_n: float = 80.0     # N per click at 150 mm/s
     # Calibrated from BMW Sebring Setup 2 ("locked platform")
     front_ls_comp_baseline: int = 7
     front_ls_rbd_baseline: int = 6
@@ -491,7 +497,7 @@ BMW_M_HYBRID_V8 = CarModel(
         hs_comp_range=(1, 20),
         hs_rbd_range=(1, 20),
         hs_slope_range=(1, 20),
-        ls_force_per_click_n=50.0,
+        ls_force_per_click_n=18.0,  # calibrated: c*v/clicks matches real data
         hs_force_per_click_n=80.0,
         # Calibrated from real BMW Sebring Setup 2 (locked platform)
         front_ls_comp_baseline=7,

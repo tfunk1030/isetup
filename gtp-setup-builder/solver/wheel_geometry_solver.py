@@ -201,22 +201,68 @@ class WheelGeometrySolver:
         deviates <0.3° from the calibrated baseline, use the baseline.
         """
         geo = self.car.geometry
-        theoretical = -(roll_deg * roll_gain)
+        # Dynamic camber at peak g = 0° gives the MINIMUM required static
+        # camber. But tyres need to be loaded across the FULL cornering
+        # envelope (0.5g to peak g), not just at peak.
+        #
+        # At partial cornering (e.g., 60% of peak g), body roll is 60% of
+        # peak roll, so the camber compensation is only 60%. If we set
+        # static camber for 0° dynamic at peak, then at 60% g the dynamic
+        # camber is still negative — the contact patch is slightly overloaded
+        # on the inner shoulder. This is PREFERRED because:
+        #   - More grip at partial g (mid-corner, transitions)
+        #   - Better stability (more resistance to further roll)
+        #   - Tyre wear is more even across the cornering range
+        #
+        # The optimal static camber accounts for the AVERAGE cornering load,
+        # not just peak. Using a weighted average across the cornering
+        # distribution (most time at 60-80% of peak g):
+        #   effective_roll = roll_at_peak * 0.75  (weighted average)
+        #   optimal = -(effective_roll * roll_gain) → this gives ~33% more
+        #   negative camber than the peak-only calculation.
+        #
+        # Additionally: GTP tyres have a rounded crown profile. More negative
+        # camber pushes the contact patch inward, using the stiffer shoulder
+        # compound. This adds ~0.3° of beneficial static camber beyond the
+        # kinematic calculation.
+
+        # The driver spends most cornering time at 60-80% of peak g
+        # (mid-corner, transitions, trail-braking). The tyre needs optimal
+        # camber at THIS load level, not at peak g.
+        #
+        # At the representative cornering load (70% peak g):
+        #   roll_representative = roll_at_peak * 0.70
+        #   camber_change = roll_representative * roll_gain
+        #   We want dynamic camber ≈ 0° at representative load:
+        #   optimal = -(roll_representative * roll_gain)
+        #
+        # At peak g, the dynamic camber will be MORE negative than 0°:
+        #   dynamic_at_peak = optimal + roll_at_peak * roll_gain
+        #   = -(0.70 * roll * gain) + roll * gain = 0.30 * roll * gain
+        #   This means ~0.4° positive at peak — acceptable, the tyre
+        #   inner shoulder is still loaded, and the slight positive gives
+        #   a wider contact patch at maximum load.
+        #
+        # Additionally: GTP tyres have a crowned profile. More negative
+        # camber engages the stiffer inner compound under load, which
+        # improves cornering stiffness at the cost of straight-line
+        # rolling resistance (negligible at racing speeds).
+
+        representative_g_fraction = 0.70
+        representative_roll = roll_deg * representative_g_fraction
+        optimal = -(representative_roll * roll_gain)
+
+        # Crown profile correction: the tyre's crown radius means the
+        # contact patch shifts inward under negative camber. This is
+        # beneficial for cornering grip. Add 0.2° more negative.
+        crown_correction = -0.2
+        optimal += crown_correction
+
         # Clamp to valid range
         c_min, c_max = geo.front_camber_range_deg
-        theoretical = max(c_min, min(c_max, theoretical))
-        # The theoretical "dynamic camber = 0° at peak g" gives a MINIMUM
-        # negative camber. Real setups run MORE negative because:
-        # 1. Tyre needs to be loaded across ALL cornering speeds, not just peak
-        # 2. More negative camber improves stability through the whole corner
-        # 3. Calibrated baselines encode empirical track-specific tuning
-        # Rule: use baseline unless theoretical says we need even MORE negative
-        # camber (i.e., more body roll than baseline assumes)
-        if theoretical < baseline_deg:
-            # Theoretical wants more negative than baseline → use theoretical
-            return round(theoretical / geo.front_camber_step_deg) * geo.front_camber_step_deg
-        # Otherwise, baseline is already more aggressive → keep it
-        return baseline_deg
+        optimal = max(c_min, min(c_max, optimal))
+        # Snap to garage step
+        return round(optimal / geo.front_camber_step_deg) * geo.front_camber_step_deg
 
     def _toe_recommendation(
         self,
