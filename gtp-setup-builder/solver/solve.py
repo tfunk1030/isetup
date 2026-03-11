@@ -4,6 +4,8 @@ Usage:
     python -m solver.solve --car bmw --track sebring --wing 17
     python -m solver.solve --car bmw --track sebring --wing 17 --balance 50.14
     python -m solver.solve --car bmw --track sebring --wing 17 --fuel 12
+    python -m solver.solve --car bmw --track sebring --wing 17 --json
+    python -m solver.solve --car bmw --track sebring --wing 17 --save output/bmw_sebring.json
 """
 
 from __future__ import annotations
@@ -19,6 +21,10 @@ from track_model.profile import TrackProfile
 from solver.rake_solver import RakeSolver
 from solver.heave_solver import HeaveSolver
 from solver.corner_spring_solver import CornerSpringSolver
+from solver.arb_solver import ARBSolver
+from solver.wheel_geometry_solver import WheelGeometrySolver
+from solver.damper_solver import DamperSolver
+from output.report import print_full_setup_report, save_json_summary
 
 TRACKS_DIR = Path(__file__).parent.parent / "data" / "tracks"
 
@@ -57,6 +63,10 @@ def main():
                         help="Free optimization (don't pin front RH at sim floor)")
     parser.add_argument("--json", action="store_true",
                         help="Output as JSON instead of human-readable")
+    parser.add_argument("--save", type=str, default=None,
+                        help="Save full JSON summary to file")
+    parser.add_argument("--report-only", action="store_true",
+                        help="Print only the garage setup sheet (skip per-step details)")
 
     args = parser.parse_args()
 
@@ -80,21 +90,22 @@ def main():
     print()
 
     # ─── Step 1: Rake / Ride Heights ─────────────────────────────────
+    print("=" * 60)
     print("Running Step 1: Rake / Ride Heights...")
     print(f"  Target DF balance: {args.balance:.2f}% ± {args.tolerance:.2f}%")
     print(f"  Fuel load: {args.fuel:.0f} L")
     print()
 
-    solver = RakeSolver(car, surface, track)
-    solution = solver.solve(
+    rake_solver = RakeSolver(car, surface, track)
+    step1 = rake_solver.solve(
         target_balance=args.balance,
         balance_tolerance=args.tolerance,
         fuel_load_l=args.fuel,
         pin_front_min=not args.free,
     )
 
-    if not args.json:
-        print(solution.summary())
+    if not args.json and not args.report_only:
+        print(step1.summary())
 
     # ─── Step 2: Heave / Third Springs ─────────────────────────────────
     print()
@@ -102,13 +113,13 @@ def main():
     print()
 
     heave_solver = HeaveSolver(car, track)
-    heave_solution = heave_solver.solve(
-        dynamic_front_rh_mm=solution.dynamic_front_rh_mm,
-        dynamic_rear_rh_mm=solution.dynamic_rear_rh_mm,
+    step2 = heave_solver.solve(
+        dynamic_front_rh_mm=step1.dynamic_front_rh_mm,
+        dynamic_rear_rh_mm=step1.dynamic_rear_rh_mm,
     )
 
-    if not args.json:
-        print(heave_solution.summary())
+    if not args.json and not args.report_only:
+        print(step2.summary())
 
     # ─── Step 3: Corner Springs ────────────────────────────────────────
     print()
@@ -116,22 +127,101 @@ def main():
     print()
 
     corner_solver = CornerSpringSolver(car, track)
-    corner_solution = corner_solver.solve(
-        front_heave_nmm=heave_solution.front_heave_nmm,
-        rear_third_nmm=heave_solution.rear_third_nmm,
+    step3 = corner_solver.solve(
+        front_heave_nmm=step2.front_heave_nmm,
+        rear_third_nmm=step2.rear_third_nmm,
         fuel_load_l=args.fuel,
     )
+
+    if not args.json and not args.report_only:
+        print(step3.summary())
+
+    # ─── Step 4: Anti-Roll Bars ────────────────────────────────────────
+    print()
+    print("Running Step 4: Anti-Roll Bars...")
+    print()
+
+    arb_solver = ARBSolver(car, track)
+    step4 = arb_solver.solve(
+        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+    )
+
+    if not args.json and not args.report_only:
+        print(step4.summary())
+
+    # ─── Step 5: Wheel Geometry ────────────────────────────────────────
+    print()
+    print("Running Step 5: Wheel Geometry...")
+    print()
+
+    geom_solver = WheelGeometrySolver(car, track)
+    step5 = geom_solver.solve(
+        k_roll_total_nm_deg=step4.k_roll_front_total + step4.k_roll_rear_total,
+        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+    )
+
+    if not args.json and not args.report_only:
+        print(step5.summary())
+
+    # ─── Step 6: Dampers ──────────────────────────────────────────────
+    print()
+    print("Running Step 6: Dampers...")
+    print()
+
+    damper_solver = DamperSolver(car, track)
+    step6 = damper_solver.solve(
+        front_wheel_rate_nmm=step3.front_wheel_rate_nmm,
+        rear_wheel_rate_nmm=step3.rear_spring_rate_nmm,
+        front_dynamic_rh_mm=step1.dynamic_front_rh_mm,
+        rear_dynamic_rh_mm=step1.dynamic_rear_rh_mm,
+        fuel_load_l=args.fuel,
+    )
+
+    if not args.json and not args.report_only:
+        print(step6.summary())
+
+    # ─── Full Setup Report ─────────────────────────────────────────────
+    print()
+    print()
+    report = print_full_setup_report(
+        car_name=car.name,
+        track_name=f"{track.track_name} — {track.track_config}",
+        wing=args.wing,
+        target_balance=args.balance,
+        step1=step1,
+        step2=step2,
+        step3=step3,
+        step4=step4,
+        step5=step5,
+        step6=step6,
+    )
+    print(report)
+
+    # ─── JSON / Save ──────────────────────────────────────────────────
+    if args.save:
+        save_json_summary(
+            car_name=car.name,
+            track_name=f"{track.track_name} — {track.track_config}",
+            wing=args.wing,
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5, step6=step6,
+            output_path=args.save,
+        )
+        print(f"\nJSON summary saved to: {args.save}")
 
     if args.json:
         import dataclasses
         output = {
-            "step1_rake": dataclasses.asdict(solution),
-            "step2_heave": dataclasses.asdict(heave_solution),
-            "step3_corner": dataclasses.asdict(corner_solution),
+            "step1_rake": dataclasses.asdict(step1),
+            "step2_heave": dataclasses.asdict(step2),
+            "step3_corner": dataclasses.asdict(step3),
+            "step4_arb": dataclasses.asdict(step4),
+            "step5_geometry": dataclasses.asdict(step5),
+            "step6_dampers": dataclasses.asdict(step6),
         }
         print(json.dumps(output, indent=2))
-    else:
-        print(corner_solution.summary())
 
 
 if __name__ == "__main__":

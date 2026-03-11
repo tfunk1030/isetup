@@ -1,14 +1,17 @@
-"""Physics-based setup solver for iRacing GTP/Hypercar cars.
-
-6-step constraint satisfaction workflow:
-1. Rake/Ride Heights — target DF balance, maximize L/D
-2. Heave/Third Springs — minimize bottoming, platform stability
-3. Corner Springs — track surface compliance, heave contribution
-4. ARBs — target LLTD (not yet implemented)
-5. Wheel Geometry — optimize contact patch (not yet implemented)
-6. Dampers — transient response (not yet implemented)
-"""
+"""GTP Setup Builder — 6-step constraint satisfaction solver."""
 
 from solver.rake_solver import RakeSolver, RakeSolution
 from solver.heave_solver import HeaveSolver, HeaveSolution
 from solver.corner_spring_solver import CornerSpringSolver, CornerSpringSolution
+from solver.arb_solver import ARBSolver, ARBSolution
+from solver.wheel_geometry_solver import WheelGeometrySolver, WheelGeometrySolution
+from solver.damper_solver import DamperSolver, DamperSolution
+
+__all__ = [
+    "RakeSolver", "RakeSolution",
+    "HeaveSolver", "HeaveSolution",
+    "CornerSpringSolver", "CornerSpringSolution",
+    "ARBSolver", "ARBSolution",
+    "WheelGeometrySolver", "WheelGeometrySolution",
+    "DamperSolver", "DamperSolution",
+]

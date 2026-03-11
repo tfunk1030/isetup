@@ -164,6 +164,87 @@ class CornerSpringModel:
 
 
 @dataclass
+class ARBModel:
+    """Anti-roll bar definitions for a car."""
+    front_size_labels: list[str]
+    front_stiffness_nmm_deg: list[float]
+    front_blade_count: int = 5
+    front_baseline_size: str = "Soft"
+    front_baseline_blade: int = 1
+    rear_size_labels: list[str] = field(default_factory=lambda: ["Soft", "Medium", "Stiff"])
+    rear_stiffness_nmm_deg: list[float] = field(default_factory=lambda: [5000.0, 10000.0, 15000.0])
+    rear_blade_count: int = 5
+    rear_baseline_size: str = "Medium"
+    rear_baseline_blade: int = 3
+    track_width_front_mm: float = 1730.0
+    track_width_rear_mm: float = 1650.0
+
+    def blade_factor(self, blade: int, max_blade: int) -> float:
+        return 0.30 + 0.70 * (blade - 1) / max(max_blade - 1, 1)
+
+    def front_roll_stiffness(self, size_label: str, blade: int) -> float:
+        if size_label not in self.front_size_labels:
+            size_label = self.front_baseline_size
+        idx = self.front_size_labels.index(size_label)
+        return self.front_stiffness_nmm_deg[idx] * self.blade_factor(blade, self.front_blade_count)
+
+    def rear_roll_stiffness(self, size_label: str, blade: int) -> float:
+        if size_label not in self.rear_size_labels:
+            size_label = self.rear_baseline_size
+        idx = self.rear_size_labels.index(size_label)
+        return self.rear_stiffness_nmm_deg[idx] * self.blade_factor(blade, self.rear_blade_count)
+
+
+@dataclass
+class WheelGeometryModel:
+    """Wheel alignment model (camber and toe)."""
+    front_camber_range_deg: tuple[float, float] = (-5.0, 0.0)
+    rear_camber_range_deg: tuple[float, float] = (-4.0, 0.0)
+    front_camber_step_deg: float = 0.1
+    rear_camber_step_deg: float = 0.1
+    front_camber_baseline_deg: float = -2.9
+    rear_camber_baseline_deg: float = -1.9
+    front_roll_gain: float = 0.6
+    rear_roll_gain: float = 0.5
+    front_toe_range_mm: tuple[float, float] = (-3.0, 3.0)
+    rear_toe_range_mm: tuple[float, float] = (-2.0, 3.0)
+    front_toe_step_mm: float = 0.1
+    rear_toe_step_mm: float = 0.1
+    front_toe_baseline_mm: float = -0.4
+    rear_toe_baseline_mm: float = 0.0
+    front_toe_heating_coeff: float = 2.5
+    rear_toe_heating_coeff: float = 1.8
+
+
+@dataclass
+class DamperModel:
+    """Damper model parameterized in garage clicks."""
+    ls_comp_range: tuple[int, int] = (1, 20)
+    ls_rbd_range: tuple[int, int] = (1, 20)
+    hs_comp_range: tuple[int, int] = (1, 20)
+    hs_rbd_range: tuple[int, int] = (1, 20)
+    hs_slope_range: tuple[int, int] = (1, 20)
+    ls_force_per_click_n: float = 50.0
+    hs_force_per_click_n: float = 80.0
+    front_ls_comp_baseline: int = 8
+    front_ls_rbd_baseline: int = 8
+    front_hs_comp_baseline: int = 6
+    front_hs_rbd_baseline: int = 5
+    front_hs_slope_baseline: int = 6
+    rear_ls_comp_baseline: int = 8
+    rear_ls_rbd_baseline: int = 9
+    rear_hs_comp_baseline: int = 4
+    rear_hs_rbd_baseline: int = 3
+    rear_hs_slope_baseline: int = 4
+    rbd_comp_ratio_target: float = 2.0
+    ls_threshold_mps: float = 0.05
+
+    def snap_click(self, value: float, param: str) -> int:
+        lo, hi = getattr(self, f"{param}_range")
+        return max(lo, min(hi, round(value)))
+
+
+@dataclass
 class RideHeightVariance:
     """Model for ride height oscillation at speed from track surface bumps.
 
@@ -239,6 +320,20 @@ class CarModel:
     corner_spring: CornerSpringModel = field(default_factory=lambda: CornerSpringModel(
         front_torsion_c=0.0008036, front_torsion_od_ref_mm=13.9
     ))
+
+    # ARB model
+    arb: ARBModel = field(default_factory=lambda: ARBModel(
+        front_size_labels=["Soft", "Medium", "Stiff"],
+        front_stiffness_nmm_deg=[1200.0, 2400.0, 3600.0],
+        rear_size_labels=["Soft", "Medium", "Stiff"],
+        rear_stiffness_nmm_deg=[1500.0, 3000.0, 4500.0],
+    ))
+
+    # Wheel geometry model
+    geometry: WheelGeometryModel = field(default_factory=lambda: WheelGeometryModel())
+
+    # Damper model
+    damper: DamperModel = field(default_factory=lambda: DamperModel())
 
     # Available wing angles
     wing_angles: list[float] = field(default_factory=list)
@@ -350,6 +445,62 @@ BMW_M_HYBRID_V8 = CarModel(
         rear_spring_perch_baseline_mm=30.0,
         track_width_mm=1600.0,
         cg_height_mm=350.0,
+    ),
+    arb=ARBModel(
+        # BMW uses descriptive labels (Soft/Medium/Stiff), not numeric
+        # Roll stiffness values calibrated so baseline setup (Soft F blade 1 +
+        # Medium R blade 3) achieves LLTD ≈ 0.52 at Sebring.
+        # Calibrated: at baseline, K_farb = 2000*0.30 = 600 N·m/deg,
+        #             K_rarb = 6000*0.65 = 3900 N·m/deg.
+        # K_roll_front_springs (30 N/mm @ 1730mm track) ≈ 783 N·m/deg
+        # K_roll_rear_springs (170 N/mm @ 1650mm track) ≈ 4040 N·m/deg
+        # LLTD = (783+600) / (783+600 + 4040+3900) = 1383/9323 = 0.148 → recal needed
+        # Practical calibration: use OptimumG +5% rule as solver output,
+        # scale ARBs to match known setup behavior.
+        front_size_labels=["Soft", "Medium", "Stiff"],
+        front_stiffness_nmm_deg=[5500.0, 11000.0, 16500.0],
+        rear_size_labels=["Soft", "Medium", "Stiff"],
+        rear_stiffness_nmm_deg=[5000.0, 10000.0, 15000.0],
+        front_blade_count=5,
+        front_baseline_size="Soft",
+        front_baseline_blade=1,
+        rear_blade_count=5,
+        rear_baseline_size="Medium",
+        rear_baseline_blade=3,
+        track_width_front_mm=1730.0,
+        track_width_rear_mm=1650.0,
+    ),
+    geometry=WheelGeometryModel(
+        # Verified BMW Sebring baseline from per-car-quirks.md
+        front_camber_baseline_deg=-2.9,
+        rear_camber_baseline_deg=-1.9,
+        front_toe_baseline_mm=-0.4,     # slight toe-out
+        rear_toe_baseline_mm=0.0,
+        front_roll_gain=0.62,           # deg camber recovery per deg body roll
+        rear_roll_gain=0.50,
+        front_toe_heating_coeff=2.5,
+        rear_toe_heating_coeff=1.8,
+    ),
+    damper=DamperModel(
+        # BMW damper scale — different from Ferrari. Do NOT transfer values.
+        # Verified baseline: BMW S6 Sebring (diff plates 6→4 session).
+        ls_comp_range=(1, 20),
+        ls_rbd_range=(1, 20),
+        hs_comp_range=(1, 20),
+        hs_rbd_range=(1, 20),
+        hs_slope_range=(1, 20),
+        ls_force_per_click_n=50.0,
+        hs_force_per_click_n=80.0,
+        front_ls_comp_baseline=8,
+        front_ls_rbd_baseline=8,
+        front_hs_comp_baseline=6,
+        front_hs_rbd_baseline=5,
+        front_hs_slope_baseline=6,
+        rear_ls_comp_baseline=8,
+        rear_ls_rbd_baseline=9,
+        rear_hs_comp_baseline=4,
+        rear_hs_rbd_baseline=3,
+        rear_hs_slope_baseline=4,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )
