@@ -3,7 +3,7 @@
   "track_config": "International",
   "track_length_m": 5793.8,
   "car": "BMW M Hybrid V8",
-  "best_lap_time_s": 109.535,
+  "best_lap_time_s": 110.0,
   "speed_bands_kph": {
     "60-80": 1.9,
     "80-100": 2.7,
@@ -889,5 +889,65 @@
       "alt_m": 19.11
     }
   ],
-  "elevation_change_m": 3.0
+  "elevation_change_m": 3.0,
+  "telemetry_source": "BMW M Hybrid V8 IBT \u2014 2026-03-06 (5 hot laps + outlap)",
+  "surface_profile": {
+    "front_shock_velocity_mm_s": {
+      "mean": 37.2,
+      "p50": 23.9,
+      "p90": 80.7,
+      "p95": 118.3,
+      "p99": 238.1,
+      "max": 1323.9,
+      "ls_fraction": 0.783,
+      "ls_mean": 19.5,
+      "hs_p95": 232.3,
+      "hs_p99": 385.2,
+      "p99_p95_ratio": 1.658
+    },
+    "rear_shock_velocity_mm_s": {
+      "mean": 42.6,
+      "p50": 24.5,
+      "p90": 97.9,
+      "p95": 149.9,
+      "p99": 299.5,
+      "max": 1424.9,
+      "ls_fraction": 0.754,
+      "ls_mean": 19.1,
+      "hs_p95": 277.9,
+      "hs_p99": 435.9,
+      "p99_p95_ratio": 1.568
+    }
+  },
+  "lateral_g": {
+    "mean_abs": 0.94,
+    "p90": 1.83,
+    "p95": 2.02,
+    "p99": 2.43,
+    "max": 4.53
+  },
+  "body_roll_deg": {
+    "mean_abs": 0.72,
+    "p95": 1.67,
+    "max": 3.88
+  },
+  "ride_heights_mm": {
+    "front": {
+      "mean": 21.2,
+      "min": -16.8,
+      "p5": 10.4,
+      "p95": 33.2
+    },
+    "rear": {
+      "mean": 35.5,
+      "min": -11.8,
+      "p5": 19.8,
+      "p95": 52.0
+    },
+    "splitter": {
+      "mean": 55.6,
+      "min": 18.4,
+      "p5": 43.8
+    }
+  }
 }
