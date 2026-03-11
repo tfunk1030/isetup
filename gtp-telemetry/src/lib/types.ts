@@ -238,52 +238,15 @@ export interface SplitterData {
 
 export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 export type RecommendationSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
-export type RecommendationCategory =
-  | 'PLATFORM'
-  | 'TYRES'
-  | 'AERO'
-  | 'DYNAMICS'
-  | 'AIDS'
-  | 'BRAKES'
-  | 'POWERTRAIN'
-  | 'TRACK';
-
-export interface RecommendationSpecific {
-  parameter: string;
-  current: string;
-  target: string;
-  delta: string;
-}
-
 export type RecommendationExactness = 'exact' | 'inferred' | 'blocked';
 
-export interface SetupRecommendation {
-  id: string;
-  category: RecommendationCategory;
-  priority: number;
-  title: string;
-  action: string;
-  rationale: string;
-  confidence: ConfidenceLevel;
-  severity: RecommendationSeverity;
-  evidence: string[];
-  specifics?: RecommendationSpecific[];
-  parameterKey?: string;
-  exactness?: RecommendationExactness;
-  verify?: string[];
-  blockedBy?: string[];
-  source?: 'rule-engine' | 'diagnostic-rule';
-}
-
-export interface DataQualityReport {
-  criticalMissingChannels: string[];
-  optionalMissingChannels: string[];
+// Judgment-free data inventory (replaces DataQualityReport)
+export interface DataInventory {
+  channelsPresent: string[];
+  channelsMissing: string[];
   parserWarnings: string[];
-  unitMismatches: string[];
   validLapCount: number;
-  confidence: ConfidenceLevel;
-  sectionConfidence: Record<string, ConfidenceLevel>;
-  notes: string[];
+  totalLapCount: number;
 }
 
 export type SetupParameterGroup =
@@ -329,28 +292,6 @@ export interface NormalizedSetup {
   };
 }
 
-export type ReasoningPhase = 'entry' | 'mid' | 'exit' | 'platform' | 'tyres';
-export type ReasoningDirection =
-  | 'stable'
-  | 'understeer-risk'
-  | 'oversteer-risk'
-  | 'traction-risk'
-  | 'bottoming-risk'
-  | 'temperature-risk'
-  | 'mixed';
-
-export interface TelemetryReasoningSignal {
-  id: string;
-  phase: ReasoningPhase;
-  summary: string;
-  direction: ReasoningDirection;
-  confidence: ConfidenceLevel;
-  evidence: string[];
-  candidateParameterKeys: string[];
-  /** Speed regime for more precise diagnostic rule matching */
-  speedRegime?: 'low' | 'mid' | 'high';
-}
-
 export interface AIRecommendationItem {
   parameterKey: string;
   displayName: string;
@@ -378,6 +319,9 @@ export interface AISetupBrief {
   confidenceNote: string;
   reasoning: string[];
   disagreements: string[];
+  dataObservations: string[];
+  overallAssessment: string;
+  feedbackCorrelation: string;
   source: 'consensus' | 'single-model';
   modelsUsed: string[];
 }
@@ -394,42 +338,16 @@ export interface ConstraintViolation {
   workaround: string;
 }
 
-// Diagnose feature types
+// Driver feedback types (for AI analysis input)
 export type CornerPhase = 'entry' | 'mid' | 'exit';
 export type SpeedRegime = 'low' | 'mid' | 'high';
 export type HandlingSymptom = 'understeer' | 'oversteer' | 'instability' | 'traction-loss' | 'bottoming';
 
-export interface DiagnoseInput {
+export interface DriverFeedback {
   freeText?: string;
   phase?: CornerPhase;
   symptom?: HandlingSymptom;
   speedRegime?: SpeedRegime;
-  carId?: string;
-  trackId?: string;
-  isWet?: boolean;
-}
-
-export interface ParameterChange {
-  parameterKey: string;
-  displayName: string;
-  direction: string;
-  magnitude: string;
-  tradeoff: string;
-  verifyChannel: string;
-  confidence: ConfidenceLevel;
-  impactRank: number;
-  telemetryEvidence?: string;
-}
-
-export interface DiagnoseResult {
-  matchedSymptom: HandlingSymptom;
-  matchedPhase?: CornerPhase;
-  matchedSpeed?: SpeedRegime;
-  parameterChanges: ParameterChange[];
-  trackNotes: string[];
-  carNotes: string[];
-  wetProtocol: { action: string; magnitude: string; rationale: string }[] | null;
-  physicsNote: string | null;
 }
 
 // Setup compare types
@@ -476,9 +394,7 @@ export interface SessionAnalysis {
   rarb: RARBAnalysis | null;
   splitter: SplitterData | null;
   validLaps: number[];
-  telemetryReasoning: TelemetryReasoningSignal[];
-  recommendations: SetupRecommendation[];
-  dataQuality: DataQualityReport;
+  dataInventory: DataInventory;
   carProfileId: string | null;
   trackProfileId: string | null;
   // Domain knowledge enrichment

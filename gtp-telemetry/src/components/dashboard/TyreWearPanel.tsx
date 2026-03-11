@@ -4,7 +4,7 @@ import {
 import { CircleDot } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
-import { ANALYSIS, COLORS } from '../../lib/constants';
+import { COLORS } from '../../lib/constants';
 import type { SessionAnalysis } from '../../lib/types';
 
 interface Props {
@@ -59,7 +59,6 @@ export function TyreWearPanel({ analysis }: Props) {
               label={corner}
               value={last[corner].avg.toFixed(1)}
               unit="%"
-              status={last[corner].avg < ANALYSIS.TYRE_WEAR_RISK_THRESHOLD ? 'HIGH' : 'OK'}
             />
           ))}
         </div>

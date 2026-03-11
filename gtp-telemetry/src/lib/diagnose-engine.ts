@@ -3,14 +3,46 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type {
-  DiagnoseInput,
-  DiagnoseResult,
-  ParameterChange,
   SessionAnalysis,
   CornerPhase,
   SpeedRegime,
   HandlingSymptom,
+  ConfidenceLevel,
 } from './types';
+
+// Local types (previously in types.ts, removed during AI-first refactor)
+export interface DiagnoseInput {
+  freeText?: string;
+  phase?: CornerPhase;
+  symptom?: HandlingSymptom;
+  speedRegime?: SpeedRegime;
+  carId?: string;
+  trackId?: string;
+  isWet?: boolean;
+}
+
+export interface ParameterChange {
+  parameterKey: string;
+  displayName: string;
+  direction: string;
+  magnitude: string;
+  tradeoff: string;
+  verifyChannel: string;
+  confidence: ConfidenceLevel;
+  impactRank: number;
+  telemetryEvidence?: string;
+}
+
+export interface DiagnoseResult {
+  matchedSymptom: HandlingSymptom;
+  matchedPhase?: CornerPhase;
+  matchedSpeed?: SpeedRegime;
+  parameterChanges: ParameterChange[];
+  trackNotes: string[];
+  carNotes: string[];
+  wetProtocol: Array<{ action: string; magnitude: string; rationale: string }> | null;
+  physicsNote: string | null;
+}
 import {
   TRACK_SETUP_GUIDANCE,
   CAR_DEEP_KNOWLEDGE,
@@ -198,12 +230,6 @@ function getTelemetryEvidence(paramKey: string, analysis: SessionAnalysis): stri
       if (rearAvg < frontAvg - 2) {
         return `Telemetry confirms: rear wearing faster (${rearAvg.toFixed(1)}% vs front ${frontAvg.toFixed(1)}%)`;
       }
-    }
-  }
-  if (paramKey.includes('Arb') || paramKey.includes('ARB')) {
-    const reasoning = analysis.telemetryReasoning.find(r => r.phase === 'mid');
-    if (reasoning) {
-      return `Telemetry: ${reasoning.summary}`;
     }
   }
   return undefined;

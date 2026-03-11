@@ -1,4 +1,4 @@
-export type AppView = 'landing' | 'optimizer' | 'compare' | 'diagnose';
+export type AppView = 'landing' | 'optimizer' | 'compare';
 
 export type EvidencePanelId =
   | 'session'

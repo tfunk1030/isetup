@@ -37,9 +37,9 @@ export function SplitterAnalysis({ analysis }: Props) {
         </ResponsiveContainer>
       </div>
       <div className="grid grid-cols-3 gap-4 mt-4">
-        <MetricRow label="Min" value={s.minHeight.toFixed(1)} unit="mm" status={s.minHeight <= 0 ? 'RISK' : 'SAFE'} />
+        <MetricRow label="Min" value={s.minHeight.toFixed(1)} unit="mm" />
         <MetricRow label="Avg" value={s.avgHeight.toFixed(1)} unit="mm" />
-        <MetricRow label="Scraping Events" value={s.bottomingCount} status={s.bottomingCount > 0 ? 'HIGH' : 'OK'} />
+        <MetricRow label="Scraping Events" value={s.bottomingCount} />
       </div>
     </Card>
   );

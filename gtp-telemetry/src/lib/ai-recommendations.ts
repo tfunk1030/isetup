@@ -273,9 +273,6 @@ function validateRecommendation(
 }
 
 function buildPrompt(analysis: SessionAnalysis, driverFeedback?: string): string {
-  const lastPressures = analysis.tyrePressureData[analysis.tyrePressureData.length - 1];
-  const lastTemps = analysis.tyreTempData[analysis.tyreTempData.length - 1];
-
   const rideHeightAvg = analysis.rideHeightData.length > 0 ? {
     LF: Number((analysis.rideHeightData.reduce((s, r) => s + r.LF, 0) / analysis.rideHeightData.length).toFixed(1)),
     RF: Number((analysis.rideHeightData.reduce((s, r) => s + r.RF, 0) / analysis.rideHeightData.length).toFixed(1)),
@@ -283,14 +280,19 @@ function buildPrompt(analysis: SessionAnalysis, driverFeedback?: string): string
     RR: Number((analysis.rideHeightData.reduce((s, r) => s + r.RR, 0) / analysis.rideHeightData.length).toFixed(1)),
   } : null;
 
+  // Build comprehensive raw data payload — AI is the sole analyst
+  const lastWear = analysis.tyreWearData[analysis.tyreWearData.length - 1];
+
   const payload = {
     session: {
       car: analysis.header.car,
       track: analysis.header.track,
       validLaps: analysis.validLaps.length,
+      totalLaps: analysis.dataInventory.totalLapCount,
       bestLapSeconds: Number.isFinite(analysis.bestTime) ? Number(analysis.bestTime.toFixed(2)) : null,
+      channelsPresent: analysis.dataInventory.channelsPresent.length,
+      channelsMissing: analysis.dataInventory.channelsMissing,
     },
-    quality: analysis.dataQuality,
     normalizedSetup: analysis.normalizedSetup.parameters.map((parameter) => ({
       parameterKey: parameter.parameterKey,
       displayName: parameter.displayName,
@@ -309,22 +311,48 @@ function buildPrompt(analysis: SessionAnalysis, driverFeedback?: string): string
       mappingStats: analysis.normalizedSetup.mappingStats,
       mappingWarnings: analysis.normalizedSetup.mappingWarnings,
     },
-    telemetryReasoning: analysis.telemetryReasoning,
-    keyMetrics: {
-      cleanBottoming: analysis.bottoming.clean,
-      kerbBottoming: analysis.bottoming.kerb,
+    // Raw telemetry data — no pre-processing, no judgments
+    tyreTemps: analysis.tyreTempData.map(lap => ({
+      lap: lap.lap,
+      LF: lap.LF, RF: lap.RF, LR: lap.LR, RR: lap.RR,
+    })),
+    tyrePressuresPSI: analysis.tyrePressureData.map(lap => ({
+      lap: lap.lap,
+      LF: Number(lap.LF.toFixed(1)), RF: Number(lap.RF.toFixed(1)),
+      LR: Number(lap.LR.toFixed(1)), RR: Number(lap.RR.toFixed(1)),
+    })),
+    tyreWear: lastWear ? {
+      LF: lastWear.LF, RF: lastWear.RF, LR: lastWear.LR, RR: lastWear.RR,
+    } : null,
+    bottoming: {
+      cleanEvents: analysis.bottoming.clean,
+      kerbEvents: analysis.bottoming.kerb,
+    },
+    shockVelocity: analysis.shockVelStats,
+    rideHeights: {
+      avgAtSpeed: rideHeightAvg,
+      sampleCount: analysis.rideHeightData.length,
+    },
+    splitter: analysis.splitter ? {
+      minHeight: Number(analysis.splitter.minHeight.toFixed(1)),
+      avgHeight: Number(analysis.splitter.avgHeight.toFixed(1)),
+      bottomingCount: analysis.splitter.bottomingCount,
+    } : null,
+    gForce: {
       peakLatG: Number(analysis.peakLatG.toFixed(2)),
       peakBrakeG: Number(analysis.peakBrakeG.toFixed(2)),
-      fuelPerLap: Number(analysis.fuel.perLap.toFixed(2)),
-      tyrePressuresPSI: lastPressures ? { LF: Number(lastPressures.LF.toFixed(1)), RF: Number(lastPressures.RF.toFixed(1)), LR: Number(lastPressures.LR.toFixed(1)), RR: Number(lastPressures.RR.toFixed(1)) } : null,
-      avgRideHeightsAtSpeedMM: rideHeightAvg,
-      lastLapTyreTemps: lastTemps ? {
-        LF: { O: Number(lastTemps.LF.O.toFixed(1)), M: Number(lastTemps.LF.M.toFixed(1)), I: Number(lastTemps.LF.I.toFixed(1)) },
-        RF: { O: Number(lastTemps.RF.O.toFixed(1)), M: Number(lastTemps.RF.M.toFixed(1)), I: Number(lastTemps.RF.I.toFixed(1)) },
-        LR: { O: Number(lastTemps.LR.O.toFixed(1)), M: Number(lastTemps.LR.M.toFixed(1)), I: Number(lastTemps.LR.I.toFixed(1)) },
-        RR: { O: Number(lastTemps.RR.O.toFixed(1)), M: Number(lastTemps.RR.M.toFixed(1)), I: Number(lastTemps.RR.I.toFixed(1)) },
-      } : null,
+      peakAccelG: Number(analysis.peakAccelG.toFixed(2)),
     },
+    fuel: {
+      perLap: Number(analysis.fuel.perLap.toFixed(2)),
+      remaining: Number(analysis.fuel.end.toFixed(1)),
+      range: Number(analysis.fuel.range.toFixed(0)),
+    },
+    driverAids: analysis.aids,
+    engineTemps: analysis.engineTemps,
+    conditioning: analysis.conditioning,
+    rarb: analysis.rarb,
+    constraintViolations: analysis.constraintViolations,
   };
 
   // Build domain knowledge context
@@ -368,22 +396,26 @@ function buildPrompt(analysis: SessionAnalysis, driverFeedback?: string): string
   }
 
   return [
-    'You are an elite iRacing GTP setup engineer.',
-    'You are receiving structured telemetry reasoning plus the parsed current garage setup.',
-    ...domainContext.map(c => `DOMAIN KNOWLEDGE: ${c}`),
+    'You are the SOLE analyst for this telemetry session. There is no pre-processing or rule engine.',
+    'You receive raw telemetry data and the parsed garage setup. Form your own conclusions from the data.',
     ...driverFeedbackLines,
+    ...domainContext.map(c => `DOMAIN KNOWLEDGE: ${c}`),
+    'Reference sim constraints (provided) when relevant — these are physics limits enforced by the simulator.',
+    'If driver feedback is provided, always correlate it with what the data shows and explain the connection.',
     'Return setup recommendations as structured parameter diffs, not prose bullets.',
     'Only mark exactness as "exact" when the parameter has mappingQuality "exact", confidence "HIGH", and no ambiguousMatches.',
     'If mappingQuality is not exact, confidence is not HIGH, or ambiguousMatches is non-empty, exactness must be "inferred".',
     'If a recommendation is limited by missing setup values or sim constraints, mark exactness as "blocked" or "inferred" and explain why.',
     'Respect the impact hierarchy when prioritizing recommendations.',
-    'If driver feedback is provided, correlate it with telemetry evidence and prioritize recommendations that address the reported symptoms.',
     'Focus on setup engineering only (no driving advice).',
     'Return STRICT JSON only with keys:',
-    '{ "summary": string, "recommendations": [{ "parameterKey": string, "displayName": string, "currentValue": string, "targetValue": string, "delta": string, "unit": string|null, "reason": string, "evidence": string[], "confidence": "HIGH"|"MEDIUM"|"LOW", "exactness": "exact"|"inferred"|"blocked", "verification": string[], "assumptions": string[] }], "watchItems": string[<=5], "confidenceNote": string, "reasoning": string[<=6], "assumptions": string[<=4] }',
+    '{ "summary": string, "recommendations": [{ "parameterKey": string, "displayName": string, "currentValue": string, "targetValue": string, "delta": string, "unit": string|null, "reason": string, "evidence": string[], "confidence": "HIGH"|"MEDIUM"|"LOW", "exactness": "exact"|"inferred"|"blocked", "verification": string[], "assumptions": string[] }], "watchItems": string[<=5], "confidenceNote": string, "reasoning": string[<=6], "dataObservations": string[<=8], "overallAssessment": string, "feedbackCorrelation": string, "assumptions": string[<=4] }',
     'Limit recommendations to the 5 highest-impact setup changes.',
     'Each recommendation must cite telemetry evidence and identify the exact garage parameter when possible.',
-    'Input telemetry summary:',
+    'dataObservations: list what you notice in the raw data (balance, wear patterns, platform behavior, etc.).',
+    'overallAssessment: your overall assessment of the session and setup state.',
+    'feedbackCorrelation: how driver feedback connects to what you see in the data (empty string if no feedback provided).',
+    'Input raw telemetry data:',
     JSON.stringify(payload),
   ].join('\n');
 }
@@ -978,8 +1010,15 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     throw new Error('No successful AI model responses were received.');
   }
 
+  const inventoryNotes: string[] = [];
+  if (analysis.dataInventory.channelsMissing.length > 0) {
+    inventoryNotes.push(`${analysis.dataInventory.channelsMissing.length} telemetry channels unavailable`);
+  }
+  if (analysis.dataInventory.validLapCount <= 3) {
+    inventoryNotes.push(`Limited data: ${analysis.dataInventory.validLapCount} valid laps`);
+  }
   const baseWatchItems = dedupeStrings(
-    [...analysis.dataQuality.notes.slice(0, 3), ...analysis.normalizedSetup.mappingWarnings.slice(0, 3)],
+    [...inventoryNotes, ...analysis.normalizedSetup.mappingWarnings.slice(0, 3)],
     5,
   );
 
@@ -992,9 +1031,12 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
         [...single.brief.watchItems, ...baseWatchItems],
         5,
       ),
-      confidenceNote: `${single.brief.confidenceNote} Dataset confidence: ${analysis.dataQuality.confidence}. ${mappingSummaryNote}`,
+      confidenceNote: `${single.brief.confidenceNote} ${analysis.dataInventory.validLapCount} valid laps. ${mappingSummaryNote}`,
       reasoning: single.brief.reasoning,
       disagreements: single.brief.assumptions,
+      dataObservations: [],
+      overallAssessment: single.brief.summary,
+      feedbackCorrelation: '',
       source: 'single-model',
       modelsUsed: [single.modelName],
     };
@@ -1029,9 +1071,12 @@ function buildConsensusBrief(results: ModelResult[], analysis: SessionAnalysis):
     watchItems: mergedWatch.length > 0
       ? dedupeStrings([...mergedWatch, ...baseWatchItems], 5)
       : baseWatchItems,
-    confidenceNote: `Dual-model synthesis complete. ${analysis.dataQuality.confidence} telemetry confidence. ${mappingSummaryNote} Resolve disagreements before final setup lock.`,
+    confidenceNote: `Dual-model synthesis complete. ${analysis.dataInventory.validLapCount} valid laps. ${mappingSummaryNote} Resolve disagreements before final setup lock.`,
     reasoning: mergedReasoning,
     disagreements: disagreementDetails,
+    dataObservations: [],
+    overallAssessment: `Consensus from ${first.modelName} + ${second.modelName}.`,
+    feedbackCorrelation: '',
     source: 'consensus',
     modelsUsed: uniqueResults.map((result) => result.modelName),
   };

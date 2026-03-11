@@ -1,7 +1,7 @@
 import { Activity } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
-import { COLORS, SHOCK_VELOCITY } from '../../lib/constants';
+import { COLORS } from '../../lib/constants';
 import type { SessionAnalysis } from '../../lib/types';
 
 interface Props {
@@ -28,7 +28,6 @@ export function ShockVelocityPanel({ analysis }: Props) {
               label="Peak"
               value={d.peak.toFixed(0)}
               unit="mm/s"
-              status={d.peak > SHOCK_VELOCITY.EXTREME ? 'HOT' : d.peak > SHOCK_VELOCITY.HIGH ? 'HIGH' : 'OK'}
             />
           </div>
         ))}

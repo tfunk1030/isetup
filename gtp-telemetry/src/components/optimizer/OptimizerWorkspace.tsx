@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertTriangle,
-  ArrowRight,
   BarChart3,
   CircleDot,
   Cog,
@@ -23,13 +22,10 @@ import { SessionComparePanel } from './SessionComparePanel';
 import { AIRecommendationAssistant } from '../dashboard/AIRecommendationAssistant';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
-import { StatusBadge } from '../shared/StatusBadge';
 import { useSessionStore } from '../../store/session-store';
 import type {
-  ConfidenceLevel,
   SessionAnalysis,
   SetupParameterGroup,
-  SetupRecommendation,
 } from '../../lib/types';
 import type { EvidencePanelId, WorkspaceTab } from '../../lib/ui-types';
 
@@ -83,31 +79,10 @@ const WORKSPACE_TABS: Array<{ id: WorkspaceTab; label: string; icon: LucideIcon 
 ];
 
 /* ── Helpers ── */
-function confidenceStatus(confidence: ConfidenceLevel): 'OK' | 'HIGH' | 'RISK' {
-  if (confidence === 'HIGH') return 'OK';
-  if (confidence === 'MEDIUM') return 'HIGH';
-  return 'RISK';
-}
-
-function evidenceForRecommendation(item: SetupRecommendation): EvidencePanelId {
-  if (item.category === 'TYRES') return 'tyres';
-  if (item.category === 'PLATFORM' || item.category === 'AERO') return 'platform';
-  if (item.category === 'TRACK') return 'context';
-  if (item.category === 'BRAKES' || item.category === 'AIDS' || item.category === 'POWERTRAIN' || item.category === 'DYNAMICS') return 'dynamics';
-  return 'session';
-}
-
 function formatLapTime(seconds: number): string {
   if (!Number.isFinite(seconds)) return '--';
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${(seconds % 60).toFixed(2).padStart(5, '0')}`;
-}
-
-function queueSummary(item: SetupRecommendation): string {
-  if (!item.specifics || item.specifics.length === 0) return item.action;
-  const [first] = item.specifics;
-  const suffix = item.specifics.length > 1 ? ` +${item.specifics.length - 1} more` : '';
-  return `${first.parameter}: ${first.current} -> ${first.target}${suffix}`;
 }
 
 /* ── Evidence Section (multi-open) ── */
@@ -151,12 +126,10 @@ function EvidenceSection({
 export function OptimizerWorkspace({ analysis }: OptimizerWorkspaceProps) {
   const {
     openEvidenceIds,
-    selectedRecommendationId,
     workspaceTab,
     setWorkspaceTab,
     toggleEvidencePanel,
     collapseAllEvidence,
-    setSelectedRecommendation,
     sessionComparison,
     sessionHistory,
     sessionCount,
@@ -173,49 +146,22 @@ export function OptimizerWorkspace({ analysis }: OptimizerWorkspaceProps) {
     return [...groups.entries()].sort((a, b) => GROUP_META[a[0]].label.localeCompare(GROUP_META[b[0]].label));
   }, [analysis]);
 
-  const actionableRecommendations = useMemo(
-    () => analysis.recommendations.filter((item) => item.id !== 'all-clear'),
-    [analysis.recommendations],
-  );
-  const exactRecommendations = useMemo(
-    () => actionableRecommendations.filter((item) => item.exactness === 'exact' || (item.specifics?.length ?? 0) > 0),
-    [actionableRecommendations],
-  );
-  const supportingRecommendations = useMemo(
-    () => actionableRecommendations.filter((item) => !exactRecommendations.includes(item)).slice(0, 6),
-    [actionableRecommendations, exactRecommendations],
-  );
-  const watchSignals = useMemo(
-    () => analysis.telemetryReasoning.filter((signal) => signal.direction !== 'stable').slice(0, 5),
-    [analysis.telemetryReasoning],
-  );
-  const selectedRecommendation = useMemo(() => {
-    const fallback = exactRecommendations[0] ?? actionableRecommendations[0] ?? null;
-    if (!selectedRecommendationId) return fallback;
-    return actionableRecommendations.find((item) => item.id === selectedRecommendationId) ?? fallback;
-  }, [actionableRecommendations, exactRecommendations, selectedRecommendationId]);
-
   const mappingStats = analysis.normalizedSetup.mappingStats;
 
   return (
     <div className="space-y-6">
       {/* ── Summary strip ── */}
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-card)] px-5 py-3">
-        <div className="flex items-center gap-2">
-          <StatusBadge status={confidenceStatus(analysis.dataQuality.confidence)} />
-          <span className="text-xs text-[var(--color-text-muted)]">confidence</span>
-        </div>
-        <span className="text-[var(--color-card-border)]">&middot;</span>
         <span className="text-xs text-[var(--color-text-dim)]">
           <strong className="text-[var(--color-text)]">{formatLapTime(analysis.bestTime)}</strong> best
         </span>
         <span className="text-[var(--color-card-border)]">&middot;</span>
         <span className="text-xs text-[var(--color-text-dim)]">
-          <strong className="text-[var(--color-text)]">{analysis.validLaps.length}</strong> valid laps
+          <strong className="text-[var(--color-text)]">{analysis.dataInventory.validLapCount}</strong> / {analysis.dataInventory.totalLapCount} valid laps
         </span>
         <span className="text-[var(--color-card-border)]">&middot;</span>
         <span className="text-xs text-[var(--color-text-dim)]">
-          <strong className="text-[var(--color-text)]">{exactRecommendations.length}</strong> exact / <strong className="text-[var(--color-text)]">{actionableRecommendations.length}</strong> total changes
+          <strong className="text-[var(--color-text)]">{analysis.dataInventory.channelsPresent.length}</strong> channels present
         </span>
       </div>
 
@@ -236,11 +182,6 @@ export function OptimizerWorkspace({ analysis }: OptimizerWorkspaceProps) {
             >
               <Icon className="h-3.5 w-3.5" />
               {label}
-              {id === 'queue' && exactRecommendations.length > 0 && (
-                <span className="rounded-full bg-[var(--color-accent)] px-1.5 py-0.5 text-[10px] font-bold text-black">
-                  {exactRecommendations.length}
-                </span>
-              )}
               {id === 'sessions' && sessionCount > 0 && (
                 <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
                   sessionComparison
@@ -259,11 +200,6 @@ export function OptimizerWorkspace({ analysis }: OptimizerWorkspaceProps) {
       {workspaceTab === 'queue' && (
         <QueueTab
           analysis={analysis}
-          exactRecommendations={exactRecommendations}
-          supportingRecommendations={supportingRecommendations}
-          selectedRecommendation={selectedRecommendation}
-          setSelectedRecommendation={setSelectedRecommendation}
-          toggleEvidencePanel={toggleEvidencePanel}
           setWorkspaceTab={setWorkspaceTab}
         />
       )}
@@ -296,7 +232,6 @@ export function OptimizerWorkspace({ analysis }: OptimizerWorkspaceProps) {
       {workspaceTab === 'context' && (
         <ContextTab
           analysis={analysis}
-          watchSignals={watchSignals}
         />
       )}
     </div>
@@ -308,156 +243,19 @@ export function OptimizerWorkspace({ analysis }: OptimizerWorkspaceProps) {
    ══════════════════════════════════════════════════════ */
 function QueueTab({
   analysis,
-  exactRecommendations,
-  supportingRecommendations,
-  selectedRecommendation,
-  setSelectedRecommendation,
-  toggleEvidencePanel,
   setWorkspaceTab,
 }: {
   analysis: SessionAnalysis;
-  exactRecommendations: SetupRecommendation[];
-  supportingRecommendations: SetupRecommendation[];
-  selectedRecommendation: SetupRecommendation | null;
-  setSelectedRecommendation: (id: string | null) => void;
-  toggleEvidencePanel: (id: EvidencePanelId) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
 }) {
   return (
     <div className="space-y-6">
-      {exactRecommendations.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-6 text-center">
-          <p className="text-sm text-[var(--color-text)]">No exact setup deltas were mapped from this run.</p>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Check the <button type="button" onClick={() => setWorkspaceTab('evidence')} className="text-[var(--color-accent)] underline">evidence deck</button> or use diagnose mode for directional guidance.
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_380px]">
-          {/* Recommendation list */}
-          <div className="space-y-3">
-            {exactRecommendations.map((item) => {
-              const isSelected = selectedRecommendation?.id === item.id;
-              const targetEvidence = evidenceForRecommendation(item);
-              return (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedRecommendation(item.id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedRecommendation(item.id); } }}
-                  className={`w-full cursor-pointer rounded-2xl border p-4 text-left transition ${
-                    isSelected
-                      ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[0_12px_36px_rgba(245,158,11,0.08)]'
-                      : 'border-[var(--color-card-border)] bg-[var(--color-surface)] hover:border-[var(--color-card-border-hover)]'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-[var(--color-bg)] px-2 py-0.5 font-mono text-[11px] text-[var(--color-text-muted)]">
-                          #{item.priority}
-                        </span>
-                        <StatusBadge status={confidenceStatus(item.confidence)} />
-                        <StatusBadge status={item.severity === 'CRITICAL' ? 'HOT' : item.severity === 'WARNING' ? 'HIGH' : 'OK'} />
-                      </div>
-                      <p className="mt-2 font-display text-base font-semibold text-[var(--color-text)]">{item.title}</p>
-                      <p className="mt-1 text-sm text-[var(--color-accent)]">{queueSummary(item)}</p>
-                    </div>
-                    <ArrowRight className={`mt-1 h-4 w-4 flex-shrink-0 ${isSelected ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}`} />
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
-                    <span>{item.category}</span>
-                    <span>{item.exactness ?? 'inferred'}</span>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleEvidencePanel(targetEvidence);
-                        setWorkspaceTab('evidence');
-                      }}
-                      className="rounded-full border border-[var(--color-card-border)] bg-[var(--color-bg)] px-2 py-0.5 text-[10px] text-[var(--color-text-dim)] hover:text-[var(--color-text)]"
-                    >
-                      {EVIDENCE_META[targetEvidence].label}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Selected recommendation detail */}
-          <div className="rounded-2xl border border-[var(--color-card-border)] bg-[linear-gradient(180deg,rgba(10,16,27,0.98),rgba(7,12,20,0.92))] p-5">
-            {selectedRecommendation ? (
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Selected Action</p>
-                  <h3 className="mt-1.5 font-display text-xl font-semibold text-[var(--color-text)]">{selectedRecommendation.title}</h3>
-                </div>
-                <div className="space-y-2.5">
-                  {(selectedRecommendation.specifics ?? []).map((specific) => (
-                    <div key={specific.parameter} className="optimizer-pair">
-                      <span>{specific.parameter}</span>
-                      <strong>{specific.current}</strong>
-                      <ArrowRight className="h-3.5 w-3.5 text-[var(--color-accent)]" />
-                      <strong>{specific.target}</strong>
-                      <small>{specific.delta}</small>
-                    </div>
-                  ))}
-                  {(!selectedRecommendation.specifics || selectedRecommendation.specifics.length === 0) && (
-                    <div className="rounded-xl border border-[var(--color-card-border)] bg-[var(--color-surface)] p-3 text-sm text-[var(--color-text-dim)]">
-                      No exact parameter targets mapped.
-                    </div>
-                  )}
-                </div>
-                <p className="text-sm leading-relaxed text-[var(--color-text-dim)]">{selectedRecommendation.rationale}</p>
-                {selectedRecommendation.verify && selectedRecommendation.verify.length > 0 && (
-                  <div className="command-note">
-                    <strong>Verify after change</strong>
-                    <span>{selectedRecommendation.verify.join(' ')}</span>
-                  </div>
-                )}
-                {selectedRecommendation.blockedBy && selectedRecommendation.blockedBy.length > 0 && (
-                  <div className="command-note">
-                    <strong>Constraints</strong>
-                    <span>{selectedRecommendation.blockedBy.join(' ')}</span>
-                  </div>
-                )}
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Evidence</p>
-                  <ul className="mt-2 space-y-1.5 text-sm text-[var(--color-text-dim)]">
-                    {selectedRecommendation.evidence.map((e) => (
-                      <li key={e} className="flex items-start gap-2">
-                        <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-                        <span>{e}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-[var(--color-text-muted)]">Select a recommendation to see its change package.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Supporting recommendations */}
-      {supportingRecommendations.length > 0 && (
-        <Card title="Supporting Recommendations" icon={<BarChart3 className="h-4 w-4" />} subtitle="Directional calls that support the exact queue">
-          <div className="space-y-3">
-            {supportingRecommendations.map((item) => (
-              <div key={item.id} className="rounded-xl border border-[var(--color-card-border)] bg-[var(--color-surface)] p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-display text-sm font-semibold text-[var(--color-text)]">{item.title}</p>
-                  <StatusBadge status={confidenceStatus(item.confidence)} />
-                </div>
-                <p className="mt-1.5 text-sm text-[var(--color-text-dim)]">{item.action}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      <div className="rounded-2xl border border-dashed border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-6 text-center">
+        <p className="text-sm text-[var(--color-text)]">Setup recommendations are now provided by the AI assistant below.</p>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+          Check the <button type="button" onClick={() => setWorkspaceTab('evidence')} className="text-[var(--color-accent)] underline">evidence deck</button> for telemetry data, or use diagnose mode for directional guidance.
+        </p>
+      </div>
 
       {/* AI assistant */}
       <AIRecommendationAssistant analysis={analysis} />
@@ -637,36 +435,31 @@ function EvidenceTab({
    ══════════════════════════════════════════════════════ */
 function ContextTab({
   analysis,
-  watchSignals,
 }: {
   analysis: SessionAnalysis;
-  watchSignals: SessionAnalysis['telemetryReasoning'];
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
-      {/* Confidence & Constraints */}
-      <Card title="Confidence & Constraints" icon={<ShieldAlert className="h-4 w-4" />} subtitle="Dataset quality and limits">
+      {/* Data Inventory & Constraints */}
+      <Card title="Data Inventory & Constraints" icon={<ShieldAlert className="h-4 w-4" />} subtitle="Dataset contents and limits">
         <div className="space-y-4">
           <div className="rounded-xl border border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm text-[var(--color-text-dim)]">Overall confidence</span>
-              <StatusBadge status={confidenceStatus(analysis.dataQuality.confidence)} />
-            </div>
             <div className="space-y-2">
-              <MetricRow label="Valid laps" value={analysis.dataQuality.validLapCount} />
-              <MetricRow label="Optional missing" value={analysis.dataQuality.optionalMissingChannels.length} />
-              <MetricRow label="Parser warnings" value={analysis.dataQuality.parserWarnings.length} />
+              <MetricRow label="Valid laps" value={analysis.dataInventory.validLapCount} />
+              <MetricRow label="Total laps" value={analysis.dataInventory.totalLapCount} />
+              <MetricRow label="Channels present" value={analysis.dataInventory.channelsPresent.length} />
+              <MetricRow label="Channels missing" value={analysis.dataInventory.channelsMissing.length} />
+              <MetricRow label="Parser warnings" value={analysis.dataInventory.parserWarnings.length} />
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            {Object.entries(analysis.dataQuality.sectionConfidence).map(([section, confidence]) => (
-              <div key={section} className="flex items-center justify-between rounded-lg border border-[var(--color-card-border)] bg-[var(--color-surface)] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.12em] text-[var(--color-text-muted)]">{section}</span>
-                <StatusBadge status={confidenceStatus(confidence)} />
-              </div>
-            ))}
-          </div>
+          {analysis.dataInventory.parserWarnings.length > 0 && (
+            <div className="space-y-1.5">
+              {analysis.dataInventory.parserWarnings.slice(0, 4).map((warning) => (
+                <div key={warning} className="command-note"><strong>Warning</strong><span>{warning}</span></div>
+              ))}
+            </div>
+          )}
 
           {analysis.constraintViolations.length > 0 && (
             <div className="rounded-xl border border-[var(--color-red)] bg-[var(--color-red-dim)] p-4">
@@ -684,33 +477,24 @@ function ContextTab({
         </div>
       </Card>
 
-      {/* Watchlist */}
-      <Card title="Watchlist" icon={<AlertTriangle className="h-4 w-4" />} subtitle="Signals worth re-checking after changes">
+      {/* Missing channels detail */}
+      <Card title="Channel Coverage" icon={<AlertTriangle className="h-4 w-4" />} subtitle="Available and missing telemetry channels">
         <div className="space-y-3">
-          {watchSignals.length > 0 ? (
-            watchSignals.map((signal) => (
-              <div key={signal.id} className="rounded-xl border border-[var(--color-card-border)] bg-[var(--color-surface)] p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-display text-sm font-semibold text-[var(--color-text)]">{signal.summary}</p>
-                  <StatusBadge status={confidenceStatus(signal.confidence)} />
-                </div>
-                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
-                  {signal.phase} phase &middot; {signal.direction.replace(/-/g, ' ')}
-                </p>
-                {signal.evidence.length > 0 && (
-                  <p className="mt-1.5 text-sm text-[var(--color-text-dim)]">{signal.evidence[0]}</p>
-                )}
-              </div>
-            ))
+          {analysis.dataInventory.channelsMissing.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Missing channels</p>
+              {analysis.dataInventory.channelsMissing.slice(0, 8).map((ch) => (
+                <div key={ch} className="command-note"><strong>Missing</strong><span>{ch}</span></div>
+              ))}
+              {analysis.dataInventory.channelsMissing.length > 8 && (
+                <p className="text-xs text-[var(--color-text-muted)]">+{analysis.dataInventory.channelsMissing.length - 8} more</p>
+              )}
+            </div>
           ) : (
             <div className="rounded-xl border border-dashed border-[var(--color-card-border)] bg-[var(--color-bg-subtle)] p-4 text-sm text-[var(--color-text-muted)]">
-              No risk-biased telemetry reasoning signals for this run.
+              All expected channels are present in this dataset.
             </div>
           )}
-
-          {analysis.dataQuality.notes.slice(0, 4).map((note) => (
-            <div key={note} className="command-note"><strong>Data note</strong><span>{note}</span></div>
-          ))}
         </div>
       </Card>
 

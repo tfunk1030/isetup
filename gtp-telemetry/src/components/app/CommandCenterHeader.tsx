@@ -2,8 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 import {
   FileDown,
   Flag,
-  Radar,
-  Stethoscope,
   GitCompare,
   Wrench,
   Upload,
@@ -12,8 +10,6 @@ import {
 import { useSessionStore } from '../../store/session-store';
 import type { SessionAnalysis } from '../../lib/types';
 import type { AppView } from '../../lib/ui-types';
-import { StatusBadge } from '../shared/StatusBadge';
-
 interface CommandCenterHeaderProps {
   analysis: SessionAnalysis | null;
 }
@@ -21,12 +17,8 @@ interface CommandCenterHeaderProps {
 const NAV_ITEMS: Array<{ id: AppView; label: string; icon: typeof Wrench }> = [
   { id: 'optimizer', label: 'Optimizer', icon: Wrench },
   { id: 'compare', label: 'Compare', icon: GitCompare },
-  { id: 'diagnose', label: 'Diagnose', icon: Stethoscope },
 ];
 
-function severityCount(analysis: SessionAnalysis, severity: SessionAnalysis['recommendations'][number]['severity']): number {
-  return analysis.recommendations.filter((item) => item.severity === severity && item.id !== 'all-clear').length;
-}
 
 export function CommandCenterHeader({ analysis }: CommandCenterHeaderProps) {
   const {
@@ -60,9 +52,6 @@ export function CommandCenterHeader({ analysis }: CommandCenterHeaderProps) {
     }
   }, [analysis, exporting]);
 
-  const criticalCount = analysis ? severityCount(analysis, 'CRITICAL') : 0;
-  const warningCount = analysis ? severityCount(analysis, 'WARNING') : 0;
-
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-card-border)] bg-[rgba(6,10,18,0.88)] backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-6 py-3 xl:px-8">
@@ -79,24 +68,9 @@ export function CommandCenterHeader({ analysis }: CommandCenterHeaderProps) {
               <p className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
                 <span>{analysis.header.car} at {analysis.header.track}</span>
                 <span className="text-[var(--color-card-border)]">&middot;</span>
-                <StatusBadge status={analysis.dataQuality.confidence === 'HIGH' ? 'OK' : analysis.dataQuality.confidence === 'MEDIUM' ? 'HIGH' : 'RISK'} />
-                {criticalCount > 0 && (
-                  <>
-                    <span className="text-[var(--color-card-border)]">&middot;</span>
-                    <span className="inline-flex items-center gap-1 text-[var(--color-cyan)]">
-                      <Radar className="h-3 w-3" />
-                      {criticalCount} critical
-                    </span>
-                  </>
-                )}
-                {warningCount > 0 && (
-                  <>
-                    <span className="text-[var(--color-card-border)]">&middot;</span>
-                    <span className="inline-flex items-center gap-1 text-[var(--color-accent)]">
-                      {warningCount} warning
-                    </span>
-                  </>
-                )}
+                <span>{analysis.dataInventory.validLapCount} valid laps</span>
+                <span className="text-[var(--color-card-border)]">&middot;</span>
+                <span>{analysis.dataInventory.channelsPresent.length} channels</span>
               </p>
             ) : (
               <p className="text-xs text-[var(--color-text-muted)]">iRacing Setup Optimizer</p>

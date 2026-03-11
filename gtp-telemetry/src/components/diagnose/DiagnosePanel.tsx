@@ -6,12 +6,12 @@ import { Card } from '../shared/Card';
 import { getAllCars } from '../../lib/car-profiles';
 import { getAllTracks } from '../../lib/track-profiles';
 import { diagnose } from '../../lib/diagnose-engine';
+import type { DiagnoseResult } from '../../lib/diagnose-engine';
 import { useSessionStore } from '../../store/session-store';
 import type {
   CornerPhase,
   HandlingSymptom,
   SpeedRegime,
-  DiagnoseResult,
   ConfidenceLevel,
 } from '../../lib/types';
 

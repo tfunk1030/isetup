@@ -1,7 +1,12 @@
 {
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "spawner",
     "codex"
   ],
-  "enableAllProjectMcpServers": true
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/tfunk/isetup/gtp-telemetry/src/components/dashboard//**)"
+    ]
+  }
 }

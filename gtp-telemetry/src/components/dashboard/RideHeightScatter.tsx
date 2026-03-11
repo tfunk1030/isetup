@@ -33,7 +33,7 @@ export function RideHeightScatter({ analysis }: Props) {
         </ResponsiveContainer>
       </div>
       <div className="mt-4">
-        <MetricRow label="Clean-Track Bottoming" value={analysis.bottoming.clean} status={analysis.bottoming.clean === 0 ? 'SAFE' : 'RISK'} />
+        <MetricRow label="Clean-Track Bottoming" value={analysis.bottoming.clean} />
         <MetricRow label="Kerb Bottoming" value={analysis.bottoming.kerb} />
       </div>
     </Card>

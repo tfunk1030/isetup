@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import {
   GitCompare,
   History,
-  Stethoscope,
 } from 'lucide-react';
 import { DropZone } from '../upload/DropZone';
 import { useSessionStore } from '../../store/session-store';
@@ -29,21 +28,7 @@ export function LandingScreen() {
         <DropZone />
 
         {/* Quick tools */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setAppView('diagnose')}
-            className="tool-launch"
-          >
-            <span className="tool-launch-icon">
-              <Stethoscope className="h-4 w-4" />
-            </span>
-            <span>
-              <strong>Diagnose</strong>
-              <small>Symptom to setup changes</small>
-            </span>
-          </button>
-
+        <div className="grid grid-cols-1 gap-3">
           <button
             type="button"
             onClick={() => setAppView('compare')}

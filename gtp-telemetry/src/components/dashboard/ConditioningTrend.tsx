@@ -18,7 +18,6 @@ export function ConditioningTrend({ analysis }: Props) {
           label={corner}
           value={`${d.rate > 0 ? '+' : ''}${d.rate.toFixed(1)}\u00B0C/lap`}
           unit={d.lapsTo85 < 50 ? `${d.lapsTo85} to 85\u00B0C` : '\u2014'}
-          status={d.last > 85 ? 'OK' : 'COLD'}
         />
       ))}
     </Card>

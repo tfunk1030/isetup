@@ -1,11 +1,11 @@
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ReferenceLine, Legend,
+  Legend,
 } from 'recharts';
 import { Flame } from 'lucide-react';
 import { Card } from '../shared/Card';
 import { MetricRow } from '../shared/MetricRow';
-import { COLORS, RECOMMENDATION, TYRE_TEMP } from '../../lib/constants';
+import { COLORS } from '../../lib/constants';
 import type { SessionAnalysis } from '../../lib/types';
 
 interface Props {
@@ -35,8 +35,6 @@ export function TyreTempsPanel({ analysis }: Props) {
               <XAxis dataKey="lap" stroke={COLORS.textMuted} fontSize={11} tickFormatter={(v) => `L${v}`} />
               <YAxis stroke={COLORS.textMuted} fontSize={11} />
               <Tooltip contentStyle={{ background: COLORS.surface, border: `1px solid ${COLORS.cardBorder}`, borderRadius: 4, fontSize: 12 }} />
-              <ReferenceLine y={TYRE_TEMP.OPERATING_TARGET} stroke={COLORS.green} strokeDasharray="5 5" label={{ value: '85\u00B0C', fill: COLORS.green, fontSize: 10 }} />
-              <ReferenceLine y={TYRE_TEMP.HOT} stroke={COLORS.red} strokeDasharray="5 5" label={{ value: '105\u00B0C', fill: COLORS.red, fontSize: 10 }} />
               <Line dataKey="LF" stroke={COLORS.LF} strokeWidth={2} dot={{ r: 3 }} />
               <Line dataKey="RF" stroke={COLORS.RF} strokeWidth={2} dot={{ r: 3 }} />
               <Line dataKey="LR" stroke={COLORS.LR} strokeWidth={2} dot={{ r: 3 }} />
@@ -53,17 +51,11 @@ export function TyreTempsPanel({ analysis }: Props) {
             {(['LF', 'RF', 'LR', 'RR'] as const).map((corner) => {
               const d = last[corner] as { O: number; M: number; I: number };
               const avg = (d.O + d.M + d.I) / 3;
-              const midVsEdges = d.M - (d.O + d.I) / 2;
-              const shape = midVsEdges > RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
-                ? 'Crown (high psi)'
-                : midVsEdges < -RECOMMENDATION.TYRE_SHAPE_DELTA_WARN_C
-                  ? 'Cup (low psi)'
-                  : 'Good';
               return (
                 <div key={corner} className="rounded-lg bg-[var(--color-bg-subtle)] p-3">
                   <p className="mb-1 text-xs font-semibold text-[var(--color-text)]">{corner}</p>
-                  <MetricRow label="Avg" value={avg.toFixed(1)} unit={'\u00B0C'} status={avg < TYRE_TEMP.COLD ? 'COLD' : avg <= TYRE_TEMP.HOT ? 'OK' : 'HOT'} />
-                  <MetricRow label="Shape" value={shape} />
+                  <MetricRow label="Avg" value={avg.toFixed(1)} unit={'\u00B0C'} />
+                  <MetricRow label="O / M / I" value={`${d.O.toFixed(1)} / ${d.M.toFixed(1)} / ${d.I.toFixed(1)}`} unit={'\u00B0C'} />
                   <MetricRow label="Spread" value={(d.I - d.O).toFixed(1)} unit={'\u00B0C'} />
                 </div>
               );

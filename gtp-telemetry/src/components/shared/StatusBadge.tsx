@@ -1,11 +1,9 @@
-import { STATUS_COLORS, type StatusType } from '../../lib/constants';
-
 interface StatusBadgeProps {
-  status: StatusType | string;
+  status: string;
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  const color = STATUS_COLORS[status as StatusType] || '#475569';
+  const color = '#475569';
   return (
     <span
       className="inline-flex items-center gap-1 text-[11px] font-bold tracking-wider rounded-md px-2 py-0.5"

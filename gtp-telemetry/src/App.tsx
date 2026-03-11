@@ -16,10 +16,6 @@ const DriverBriefing = lazy(() =>
 const ComparePanel = lazy(() =>
   import('./components/compare/ComparePanel').then((m) => ({ default: m.ComparePanel }))
 );
-const DiagnosePanel = lazy(() =>
-  import('./components/diagnose/DiagnosePanel').then((m) => ({ default: m.DiagnosePanel }))
-);
-
 function LoadingFallback() {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-card-border)] bg-[var(--color-card)] px-4 py-6">
@@ -40,7 +36,6 @@ function ShellBody() {
     <main className="mx-auto max-w-[1600px] px-6 py-8 xl:px-8">
       <Suspense fallback={<LoadingFallback />}>
         {appView === 'compare' && <ComparePanel />}
-        {appView === 'diagnose' && <DiagnosePanel />}
         {appView === 'optimizer' && parsedData && !analysis && <DriverBriefing />}
         {(appView === 'optimizer' || (!!analysis && appView === 'landing')) && analysis && (
           <OptimizerWorkspace analysis={analysis} />

@@ -25,7 +25,6 @@ interface SessionStore {
   carProfile: CarProfile | null;
   trackProfile: TrackProfile | null;
   appView: AppView;
-  selectedRecommendationId: string | null;
   openEvidenceId: EvidencePanelId | null;
   openEvidenceIds: Set<EvidencePanelId>;
   workspaceTab: WorkspaceTab;
@@ -47,7 +46,6 @@ interface SessionStore {
   runAnalysis: () => void;
   reset: () => void;
   setAppView: (view: AppView) => void;
-  setSelectedRecommendation: (id: string | null) => void;
   setOpenEvidenceId: (id: EvidencePanelId | null) => void;
   toggleEvidencePanel: (id: EvidencePanelId) => void;
   collapseAllEvidence: () => void;
@@ -67,7 +65,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   carProfile: null,
   trackProfile: null,
   appView: 'landing',
-  selectedRecommendationId: null,
   openEvidenceId: null,
   openEvidenceIds: new Set(),
   workspaceTab: 'queue',
@@ -136,7 +133,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         carProfile,
         trackProfile,
         appView: 'optimizer',
-        selectedRecommendationId: null,
         openEvidenceId: null,
         openEvidenceIds: new Set(),
         workspaceTab: 'queue',
@@ -193,7 +189,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         loading: false,
         progress: '',
         analysis: result,
-        selectedRecommendationId: null,
         openEvidenceId: null,
         openEvidenceIds: new Set(),
         workspaceTab: comparison ? 'sessions' : 'queue',
@@ -224,7 +219,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       carProfile: null,
       trackProfile: null,
       appView: 'landing',
-      selectedRecommendationId: null,
       openEvidenceId: null,
       openEvidenceIds: new Set(),
       workspaceTab: 'queue',
@@ -239,7 +233,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   setAppView: (view: AppView) => set({ appView: view }),
 
-  setSelectedRecommendation: (id: string | null) => set({ selectedRecommendationId: id }),
 
   setOpenEvidenceId: (id: EvidencePanelId | null) => set({ openEvidenceId: id }),
 
