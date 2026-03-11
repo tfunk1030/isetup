@@ -205,10 +205,18 @@ class WheelGeometrySolver:
         # Clamp to valid range
         c_min, c_max = geo.front_camber_range_deg
         theoretical = max(c_min, min(c_max, theoretical))
-        # If within 0.3° of baseline, use baseline (avoid unnecessary deviation)
-        if abs(theoretical - baseline_deg) < 0.3:
-            return baseline_deg
-        return round(theoretical / geo.front_camber_step_deg) * geo.front_camber_step_deg
+        # The theoretical "dynamic camber = 0° at peak g" gives a MINIMUM
+        # negative camber. Real setups run MORE negative because:
+        # 1. Tyre needs to be loaded across ALL cornering speeds, not just peak
+        # 2. More negative camber improves stability through the whole corner
+        # 3. Calibrated baselines encode empirical track-specific tuning
+        # Rule: use baseline unless theoretical says we need even MORE negative
+        # camber (i.e., more body roll than baseline assumes)
+        if theoretical < baseline_deg:
+            # Theoretical wants more negative than baseline → use theoretical
+            return round(theoretical / geo.front_camber_step_deg) * geo.front_camber_step_deg
+        # Otherwise, baseline is already more aggressive → keep it
+        return baseline_deg
 
     def _toe_recommendation(
         self,

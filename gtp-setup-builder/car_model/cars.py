@@ -226,17 +226,18 @@ class DamperModel:
     hs_slope_range: tuple[int, int] = (1, 20)
     ls_force_per_click_n: float = 50.0
     hs_force_per_click_n: float = 80.0
-    front_ls_comp_baseline: int = 8
-    front_ls_rbd_baseline: int = 8
-    front_hs_comp_baseline: int = 6
-    front_hs_rbd_baseline: int = 5
-    front_hs_slope_baseline: int = 6
-    rear_ls_comp_baseline: int = 8
-    rear_ls_rbd_baseline: int = 9
-    rear_hs_comp_baseline: int = 4
-    rear_hs_rbd_baseline: int = 3
-    rear_hs_slope_baseline: int = 4
-    rbd_comp_ratio_target: float = 2.0
+    # Calibrated from BMW Sebring Setup 2 ("locked platform")
+    front_ls_comp_baseline: int = 7
+    front_ls_rbd_baseline: int = 6
+    front_hs_comp_baseline: int = 5
+    front_hs_rbd_baseline: int = 8
+    front_hs_slope_baseline: int = 10
+    rear_ls_comp_baseline: int = 6
+    rear_ls_rbd_baseline: int = 7
+    rear_hs_comp_baseline: int = 3
+    rear_hs_rbd_baseline: int = 9
+    rear_hs_slope_baseline: int = 10
+    rbd_comp_ratio_target: float = 1.6  # HS rbd:comp from S2 front (8/5)
     ls_threshold_mps: float = 0.05
 
     def snap_click(self, value: float, param: str) -> int:
@@ -472,9 +473,10 @@ BMW_M_HYBRID_V8 = CarModel(
     ),
     geometry=WheelGeometryModel(
         # Verified BMW Sebring baseline from per-car-quirks.md
+        # Calibrated from real BMW Sebring setups (S1: -2.8/-1.9, S2: -2.9/-1.8)
         front_camber_baseline_deg=-2.9,
-        rear_camber_baseline_deg=-1.9,
-        front_toe_baseline_mm=-0.4,     # slight toe-out
+        rear_camber_baseline_deg=-1.8,
+        front_toe_baseline_mm=-0.4,     # slight toe-out (S1: -0.5, S2: -0.4)
         rear_toe_baseline_mm=0.0,
         front_roll_gain=0.62,           # deg camber recovery per deg body roll
         rear_roll_gain=0.50,
@@ -491,16 +493,17 @@ BMW_M_HYBRID_V8 = CarModel(
         hs_slope_range=(1, 20),
         ls_force_per_click_n=50.0,
         hs_force_per_click_n=80.0,
-        front_ls_comp_baseline=8,
-        front_ls_rbd_baseline=8,
-        front_hs_comp_baseline=6,
-        front_hs_rbd_baseline=5,
-        front_hs_slope_baseline=6,
-        rear_ls_comp_baseline=8,
-        rear_ls_rbd_baseline=9,
-        rear_hs_comp_baseline=4,
-        rear_hs_rbd_baseline=3,
-        rear_hs_slope_baseline=4,
+        # Calibrated from real BMW Sebring Setup 2 (locked platform)
+        front_ls_comp_baseline=7,
+        front_ls_rbd_baseline=6,
+        front_hs_comp_baseline=5,
+        front_hs_rbd_baseline=8,
+        front_hs_slope_baseline=10,
+        rear_ls_comp_baseline=6,
+        rear_ls_rbd_baseline=7,
+        rear_hs_comp_baseline=3,
+        rear_hs_rbd_baseline=9,
+        rear_hs_slope_baseline=10,
     ),
     wing_angles=[12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
 )

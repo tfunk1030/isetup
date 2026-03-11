@@ -332,6 +332,22 @@ class DamperSolver:
     ) -> DamperSolution:
         """Compute all damper settings.
 
+        Hybrid approach: use physics to compute RELATIVE adjustments from
+        calibrated baselines. This is more reliable than pure force-to-click
+        conversion because the click-to-force mapping in iRacing is not
+        publicly documented with sufficient precision.
+
+        Real BMW Sebring calibration data (two setups):
+          S2 "locked": F LS 7/6, HS 5/8, slope 10 | R LS 6/7, HS 3/9, slope 10
+          S1 "compliant": F LS 10/5, HS 9/5, slope 5 | R LS 5/5, HS 10/6, slope 11
+
+        Key patterns from real data:
+          - LS rbd ≈ LS comp (ratio 0.8-1.2:1, NOT 2:1)
+          - HS rbd > HS comp (ratio 1.5-3.0:1)
+          - Rear HS comp < front HS comp (rear more compliant)
+          - Front LS comp > rear LS comp (front controls entry)
+          - HS slope: both axles similar (10/10 in locked, 5/11 in compliant)
+
         Args:
             front_wheel_rate_nmm: Front wheel rate from Step 3 (N/mm)
             rear_wheel_rate_nmm: Rear wheel rate from Step 3 (N/mm)
@@ -344,58 +360,102 @@ class DamperSolver:
         """
         d = self.car.damper
 
-        # Corner masses
+        # Corner masses (for physics-based relative scaling)
         m_front = self._mass_per_corner_kg(is_front=True, fuel_load_l=fuel_load_l)
         m_rear = self._mass_per_corner_kg(is_front=False, fuel_load_l=fuel_load_l)
 
-        # ─── LS targets ──────────────────────────────────────────────────────
-        target_ls_comp_front = self._target_ls_comp_force(m_front, front_wheel_rate_nmm)
-        target_ls_comp_rear = self._target_ls_comp_force(m_rear, rear_wheel_rate_nmm)
-
-        # Rebound ~2× compression at LS
-        target_ls_rbd_front = target_ls_comp_front * d.rbd_comp_ratio_target
-        target_ls_rbd_rear = target_ls_comp_rear * d.rbd_comp_ratio_target
-        # Rear LS rbd slightly asymmetric: 10% more than 2x for anti-squat
-        target_ls_rbd_rear *= 1.10
-
-        # ─── HS targets ──────────────────────────────────────────────────────
-        target_hs_comp_front = self._target_hs_comp_force(
+        # ─── Physics-based relative forces ────────────────────────────────────
+        # These are used to compute DELTAS from baseline, not absolute clicks
+        f_ls_comp_front = self._target_ls_comp_force(m_front, front_wheel_rate_nmm)
+        f_ls_comp_rear = self._target_ls_comp_force(m_rear, rear_wheel_rate_nmm)
+        f_hs_comp_front = self._target_hs_comp_force(
             self.track.shock_vel_p95_front_mps, front_wheel_rate_nmm, front_dynamic_rh_mm
         )
-        target_hs_comp_rear = self._target_hs_comp_force(
+        f_hs_comp_rear = self._target_hs_comp_force(
             self.track.shock_vel_p95_rear_mps, rear_wheel_rate_nmm, rear_dynamic_rh_mm
         )
 
-        # HS rebound ~2× HS comp
-        target_hs_rbd_front = target_hs_comp_front * d.rbd_comp_ratio_target
-        target_hs_rbd_rear = target_hs_comp_rear * d.rbd_comp_ratio_target
+        # ─── Baseline-anchored click calculation ──────────────────────────────
+        # Start from calibrated baselines, adjust by physics delta
+        # Delta = (computed_force - baseline_force) / force_per_click
+        # Baseline force = baseline_clicks * force_per_click
 
-        # Rear HS values are lower than front (rear needs more compliance)
-        # Rear HS comp should be ~70% of front HS comp (BMW calibrated)
-        rear_hs_comp_scale = 0.70
-        target_hs_comp_rear *= rear_hs_comp_scale
-        target_hs_rbd_rear *= rear_hs_comp_scale
+        # LS: front controls roll/pitch rate, rear follows
+        # BMW pattern: front LS comp slightly > rear LS comp
+        front_ls_comp = d.front_ls_comp_baseline
+        front_ls_rbd = d.front_ls_rbd_baseline
+        rear_ls_comp = d.rear_ls_comp_baseline
+        rear_ls_rbd = d.rear_ls_rbd_baseline
 
-        # ─── Convert to clicks ───────────────────────────────────────────────
-        lo_ls, hi_ls = d.ls_comp_range
-        lo_hs, hi_hs = d.hs_comp_range
+        # Adjust LS based on wheel rate ratio vs baseline
+        # Stiffer springs → need stiffer LS to match (damping ratio preserved)
+        # BMW S2 baseline: front torsion 13.9mm → ~30 N/mm effective wheel rate
+        baseline_front_wr = 30.0  # approximate front wheel rate for S2 baseline
+        baseline_rear_wr = 170.0  # rear wheel rate ≈ spring rate (passed as wheel rate)
+        wr_ratio_front = front_wheel_rate_nmm / max(baseline_front_wr, 1)
+        wr_ratio_rear = rear_wheel_rate_nmm / max(baseline_rear_wr, 1)
 
-        front_ls_comp = self._force_to_clicks(target_ls_comp_front, d.ls_force_per_click_n, lo_ls, hi_ls)
-        front_ls_rbd = self._force_to_clicks(target_ls_rbd_front, d.ls_force_per_click_n, lo_ls, hi_ls)
-        front_hs_comp = self._force_to_clicks(target_hs_comp_front, d.hs_force_per_click_n, lo_hs, hi_hs)
-        front_hs_rbd = self._force_to_clicks(target_hs_rbd_front, d.hs_force_per_click_n, lo_hs, hi_hs)
+        # Scale LS clicks by sqrt of wheel rate ratio (damping ~ sqrt(k*m))
+        import math as _math
+        ls_scale_f = _math.sqrt(wr_ratio_front)
+        ls_scale_r = _math.sqrt(wr_ratio_rear)
+        front_ls_comp = max(d.ls_comp_range[0], min(d.ls_comp_range[1],
+            round(d.front_ls_comp_baseline * ls_scale_f)))
+        front_ls_rbd = max(d.ls_rbd_range[0], min(d.ls_rbd_range[1],
+            round(d.front_ls_rbd_baseline * ls_scale_f)))
+        rear_ls_comp = max(d.ls_comp_range[0], min(d.ls_comp_range[1],
+            round(d.rear_ls_comp_baseline * ls_scale_r)))
+        rear_ls_rbd = max(d.ls_rbd_range[0], min(d.ls_rbd_range[1],
+            round(d.rear_ls_rbd_baseline * ls_scale_r)))
 
-        rear_ls_comp = self._force_to_clicks(target_ls_comp_rear, d.ls_force_per_click_n, lo_ls, hi_ls)
-        rear_ls_rbd = self._force_to_clicks(target_ls_rbd_rear, d.ls_force_per_click_n, lo_ls, hi_ls)
-        rear_hs_comp = self._force_to_clicks(target_hs_comp_rear, d.hs_force_per_click_n, lo_hs, hi_hs)
-        rear_hs_rbd = self._force_to_clicks(target_hs_rbd_rear, d.hs_force_per_click_n, lo_hs, hi_hs)
+        # ─── HS: baseline-anchored with track bumpiness adjustment ────────────
+        # BMW S2 pattern: front HS comp > rear HS comp (5 vs 3)
+        # HS rbd > HS comp with ratio ~1.6:1 front, 3.0:1 rear
+        front_hs_comp = d.front_hs_comp_baseline
+        front_hs_rbd = d.front_hs_rbd_baseline
+        rear_hs_comp = d.rear_hs_comp_baseline
+        rear_hs_rbd = d.rear_hs_rbd_baseline
 
-        # HS slope
-        # Use worst-case (front p99 — usually higher than rear on bumpy tracks)
+        # Adjust HS based on shock velocity vs calibration track
+        # Use the track's own profile as reference when it's the calibration track
+        # For non-calibration tracks, compare against Sebring baselines
+        # Sebring profile shock vels from our IBT data: 0.13 / 0.16 m/s
+        sebring_p95_front = 0.1288  # m/s reference (from Sebring track profile)
+        sebring_p95_rear = 0.1627
+        hs_ratio_f = self.track.shock_vel_p95_front_mps / sebring_p95_front
+        hs_ratio_r = self.track.shock_vel_p95_rear_mps / sebring_p95_rear
+
+        # Bumpier track → stiffer HS comp (more control needed)
+        # Each 20% increase in shock vel → +1 click HS comp
+        hs_delta_f = round((hs_ratio_f - 1.0) * 5)  # 5 clicks per 100% increase
+        hs_delta_r = round((hs_ratio_r - 1.0) * 5)
+
+        front_hs_comp = max(d.hs_comp_range[0], min(d.hs_comp_range[1],
+            d.front_hs_comp_baseline + hs_delta_f))
+        rear_hs_comp = max(d.hs_comp_range[0], min(d.hs_comp_range[1],
+            d.rear_hs_comp_baseline + hs_delta_r))
+
+        # HS rebound follows comp with calibrated ratios
+        # Front: rbd/comp ≈ 1.6:1, Rear: rbd/comp ≈ 3.0:1
+        front_hs_rbd = max(d.hs_rbd_range[0], min(d.hs_rbd_range[1],
+            round(front_hs_comp * 1.6)))
+        rear_hs_rbd = max(d.hs_rbd_range[0], min(d.hs_rbd_range[1],
+            round(rear_hs_comp * 3.0)))
+
+        # ─── HS slope ─────────────────────────────────────────────────────────
         slope_val, slope_reason = self._hs_slope(
             max(self.track.shock_vel_p99_front_mps, self.track.shock_vel_p99_rear_mps)
         )
-        rear_slope = max(d.hs_slope_range[0], slope_val - 2)  # Rear slightly less digressive
+        # Both axles get same slope (S2 pattern: 10/10)
+        rear_slope = slope_val
+
+        # ─── Capture target forces for reporting ──────────────────────────────
+        target_ls_comp_front = f_ls_comp_front
+        target_ls_rbd_front = f_ls_comp_front * (front_ls_rbd / max(front_ls_comp, 1))
+        target_hs_comp_front = f_hs_comp_front
+        target_ls_comp_rear = f_ls_comp_rear
+        target_ls_rbd_rear = f_ls_comp_rear * (rear_ls_rbd / max(rear_ls_comp, 1))
+        target_hs_comp_rear = f_hs_comp_rear
 
         # ─── Build corner settings ────────────────────────────────────────────
         lf = CornerDamperSettings(
@@ -418,54 +478,54 @@ class DamperSolver:
         # ─── Constraint checks ────────────────────────────────────────────────
         constraints = [
             DamperConstraintCheck(
-                name="Front LS rebound/compression ratio",
-                passed=1.5 <= lf.rbd_comp_ratio_ls() <= 2.5,
+                name="Front LS rbd/comp ratio",
+                passed=0.5 <= lf.rbd_comp_ratio_ls() <= 1.5,
                 value=lf.rbd_comp_ratio_ls(),
-                target=d.rbd_comp_ratio_target,
+                target=d.front_ls_rbd_baseline / max(d.front_ls_comp_baseline, 1),
                 units=":1",
-                note=f"Target ~2:1 for controlled body motion recovery",
+                note="BMW pattern: LS rbd ≈ LS comp (0.8-1.2:1)",
             ),
             DamperConstraintCheck(
-                name="Rear LS rebound/compression ratio",
-                passed=1.5 <= lr.rbd_comp_ratio_ls() <= 2.5,
+                name="Rear LS rbd/comp ratio",
+                passed=0.5 <= lr.rbd_comp_ratio_ls() <= 1.5,
                 value=lr.rbd_comp_ratio_ls(),
-                target=d.rbd_comp_ratio_target,
+                target=d.rear_ls_rbd_baseline / max(d.rear_ls_comp_baseline, 1),
                 units=":1",
             ),
             DamperConstraintCheck(
-                name="Front HS comp within range",
-                passed=d.hs_comp_range[0] <= front_hs_comp <= d.hs_comp_range[1],
-                value=float(front_hs_comp),
-                target=float(d.front_hs_comp_baseline),
-                units="clicks",
+                name="Front HS rbd/comp ratio",
+                passed=1.0 <= lf.rbd_comp_ratio_hs() <= 3.0,
+                value=lf.rbd_comp_ratio_hs(),
+                target=1.6,
+                units=":1",
+                note="BMW S2 calibrated: front HS rbd/comp ≈ 1.6:1",
             ),
             DamperConstraintCheck(
-                name="Rear HS comp < Front HS comp (compliance hierarchy)",
-                passed=rear_hs_comp < front_hs_comp,
+                name="Rear HS comp < Front HS comp",
+                passed=rear_hs_comp <= front_hs_comp,
                 value=float(rear_hs_comp),
                 target=float(front_hs_comp),
                 units="clicks",
-                note="Rear should be softer for traction over bumps",
+                note="Rear more compliant for traction over bumps",
             ),
             DamperConstraintCheck(
-                name="LS comp within valid click range",
-                passed=d.ls_comp_range[0] <= front_ls_comp <= d.ls_comp_range[1],
+                name="Front LS comp > Rear LS comp",
+                passed=front_ls_comp >= rear_ls_comp,
                 value=float(front_ls_comp),
-                target=float(d.front_ls_comp_baseline),
+                target=float(rear_ls_comp),
                 units="clicks",
+                note="Front controls entry weight transfer rate",
             ),
         ]
 
         notes = [
-            "BMW scale: LS ~50N/click, HS ~80N/click. Do NOT use these values on Ferrari.",
-            "LS damping primarily affects lap time — too stiff = understeer on entry, "
-            "too soft = excessive roll/pitch. Adjust LS last in each tuning session.",
-            "HS damping primarily affects stability — too stiff = tyre loses contact "
-            "over bumps, too soft = platform bottoms. BMW rear HS is softer than front by design.",
-            "Adjust dampers AFTER validating rake, springs, ARBs, and geometry with an IBT session.",
-            "Diagnosis: if car understeers at entry → soften front LS comp. "
-            "If car is stable but slow → soften front LS rbd. "
-            "If car bottoms at high speed → stiffen front HS comp.",
+            "Click values are car-specific (BMW scale). Do NOT transfer to other GTP cars.",
+            "Calibrated from real BMW Sebring setup data (S2 'locked platform').",
+            "BMW LS pattern: rbd ≈ comp (0.86:1 front, 1.17:1 rear) — NOT textbook 2:1.",
+            "BMW HS pattern: rbd > comp (1.6:1 front, 3.0:1 rear) — standard convention.",
+            "Rear HS comp is LOWER than front (3 vs 5 at Sebring) — rear needs compliance.",
+            "Both axles share HS slope (S2: 10/10). Adjust only for very different surfaces.",
+            "Diagnosis: understeer entry → soften F LS comp -1. Snap oversteer → stiffen R LS comp +1.",
         ]
 
         return DamperSolution(

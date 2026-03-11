@@ -191,8 +191,9 @@ class ARBSolver:
         """
         k_wheel_nm = k_wheel_nmm * 1000  # N/mm → N/m
         t_half_m = (track_width_mm / 2) / 1000  # mm → m
-        k_roll_rad = 2.0 * k_wheel_nm * (t_half_m ** 2)
-        return k_roll_rad / (math.pi / 180)
+        k_roll_rad = 2.0 * k_wheel_nm * (t_half_m ** 2)  # N·m/rad
+        # Convert N·m/rad → N·m/deg: multiply by (π/180)
+        return k_roll_rad * (math.pi / 180)
 
     def _lltd_from_roll_stiffness(
         self, k_front: float, k_rear: float
