@@ -30,7 +30,7 @@ Before S4 2025, the hybrid added power ON TOP of ICE output like an LMP1 boost. 
 **Brake migration was running at exactly 50% of stated value** across all GTP cars until this fix. Every setup built before this date had half the intended migration. **Conversion: halve your migration setting, add 1-1.25% forward to brake bias.** At 100% pedal, bias equals base setting; at 0% pedal, bias = base + migration gain. Brake migration was also newly added to the Ferrari 499P in this patch.
 
 ### Cars With Brake Migration
-BMW M Hybrid V8: **NO** · Cadillac V-Series.R: **YES** · Porsche 963: **YES** · Acura ARX-06: **NO** · Ferrari 499P: **YES** (added S3 2025)
+BMW M Hybrid V8: **YES** (available, often set to 0) · Cadillac V-Series.R: **YES** · Porsche 963: **YES** · Acura ARX-06: **UNVERIFIED** · Ferrari 499P: **YES** (added S3 2025)
 
 ## The Five GTP Cars
 
@@ -38,10 +38,10 @@ All five share the LMDh/Hypercar platform regulated under Balance of Performance
 
 | Car | Chassis | Engine | Brake Migration | Character |
 |-----|---------|--------|-----------------|-----------|
-| BMW M Hybrid V8 | Dallara LMDh | 4.0L Twin-Turbo V8 | NO | Neutral all-rounder, demands most setup iteration per track, snappy on cold tyres, sensitive to rear ARB |
+| BMW M Hybrid V8 | Dallara LMDh | 4.0L Twin-Turbo V8 | YES (often 0) | Neutral all-rounder, demands most setup iteration per track, snappy on cold tyres, sensitive to rear ARB |
 | Cadillac V-Series.R | Dallara LMDh | 5.5L NA V8 | YES | Best all-rounder, most forgiving, linear power (no turbo lag), slight understeer bias, excellent endurance weapon |
 | Porsche 963 | Multimatic LMDh | 4.5L Twin-Turbo V8 | YES | Best traction in class, highest top speed in low-DF trim, slow-corner understeer, progressive chassis response |
-| Acura ARX-06 | Dallara LMDh | 2.4L Twin-Turbo V6 | NO | Sharpest front end in class, prone to snap oversteer, diff preload is THE parameter, lowest top speed |
+| Acura ARX-06 | Dallara LMDh | 2.4L Twin-Turbo V6 | UNVERIFIED | Sharpest front end in class, prone to snap oversteer, diff preload is THE parameter, lowest top speed |
 | Ferrari 499P | Bespoke Ferrari (LMH) | 3.0L Twin-Turbo V6 | YES (added S3 2025) | Strongest mid/high-speed, narrow braking window, front hybrid cornering mode unique to this car, partial AWD >190 km/h in wet |
 
 **For detailed per-car parameter quirks and known interactions, read** `references/per-car-quirks.md`.
@@ -83,8 +83,9 @@ iRacing logs both surface temps (`LFtempL/M/R`) and carcass temps (`LFtempCL/CM/
 - `LFtempCL` / `LFtempCM` / `LFtempCR` (and RF, LR, RR) — **Carcass** temps. Slower-responding, should represent deeper tyre heat. **May be flat/ambient in short stints — always verify before using.**
 - L/R refers to tyre face viewed from behind. For left tyres: L=outer, R=inner. For right tyres: R=outer, L=inner. The setup's `LastTempsOMI` (left tyres) vs `LastTempsIMO` (right tyres) confirms this mapping.
   - Ideal spread: Inner hottest, ~5-8°C gradient to outer. If outer is hottest → too little negative camber or excessive sliding.
-  - Ideal operating window: **85-105°C** for GTP tyres. Peak grip ~95-100°C. Above 105°C = thermal degradation.
-  - **If all temps are below 70°C after 3+ laps**, check pressures first — overinflated tyres have reduced contact patch and generate less heat.
+  - **Pressure diagnostic from temperature:** If middle temp minus the average of (inner + outer) is positive → pressure too high (tyre crowning, contact patch narrowed to center strip). If negative → pressure too low (tyre cupping, edges carrying the load). This is real-world Michelin engineering methodology.
+  - Ideal operating window: **85-105°C** for GTP tyres. Peak grip ~95-100°C. Above 105°C = thermal degradation. The operating window can be as narrow as 5°C for some compounds.
+  - **If all temps are below 70°C after 3+ laps**, first check if this is Vision tread conditioning (S1 2026+) rather than a setup problem. Compute the conditioning rate (°C/lap) and estimate laps to reach window. If rates are positive and the stint is short, this may be normal. If temps aren't trending up, then check pressures — overinflated tyres have reduced contact patch and generate less heat.
 - `LFpressure` / `RFpressure` / `LRpressure` / `RRpressure` — **Hot** tyre pressures in **kPa** (divide by 6.895 for PSI). Cold pressures also logged as `LFcoldPressure` etc. Target hot: **138-165 kPa (20-24 PSI)**.
   - **Cold-to-hot pressure rise:** Expect +20-35 kPa (3-5 PSI) from cold to stabilized hot. Starting at 152 kPa (22 PSI) cold — which is the **minimum allowed cold pressure in iRacing GTP** — hot will reach ~175-185 kPa (25-27 PSI), exceeding the 20-24 PSI target. Since you cannot go below 152 kPa cold, **hot pressures will always run high.** This is a known constraint — focus on other setup levers (camber, alignment, spring rates, aero) to manage tyre performance rather than chasing ideal hot pressures.
 - `LFwearL` / `LFwearM` / `LFwearR` (per corner) — Tread remaining (100%=new). Cross-reference with temp to diagnose thermal vs mechanical wear.
@@ -118,8 +119,9 @@ When analyzing telemetry or a user-described problem, follow this sequence:
    - **Pressure check**: Compare hot pressures against 20-24 PSI target. At minimum cold (152 kPa), hot pressures will land 25-27 PSI — this is expected and unavoidable. Note the overshoot but don't recommend lowering cold pressures below 152 kPa (that's the sim's minimum).
 4. **Check platform stability**: Ride height traces through fast corners. Is the car bottoming? Is ride height variance excessive?
    - **Bottoming threshold**: Any per-corner ride height ≤ 0 mm at speed = bottoming event.
+   - **⚠ ALWAYS CORRELATE BOTTOMING WITH TRACK POSITION** using `LapDistPct` before recommending heave spring changes. Kerb strikes at known kerb-riding corners are driving choices, not setup failures. Only bottoming on clean track (non-kerb sections) indicates a platform problem. Use `LapDistPct` bins to separate kerb zones from clean track. Report bottoming as "X events on clean track, Y events on kerbs" — this distinction changes the entire diagnosis.
    - **CFSR threshold**: Center front splitter ride height < 5 mm at speed = splitter bottoming risk.
-   - **Platform stability threshold**: Heave deflection σ > 5 mm at >200 km/h = unstable platform. Per-corner ride height σ > 5 mm at speed = excessive oscillation.
+   - **Platform stability threshold**: Heave deflection σ > 5 mm at >200 km/h = unstable platform. Per-corner ride height σ > 5 mm at speed = excessive oscillation. Consider computing σ with and without kerb zones — σ on clean track is the actionable metric.
    - **High-speed filter**: Use >200 km/h for aero-dominated analysis. Use 30-100 km/h for mechanical grip analysis.
 5. **Identify the corner phase**: Where does the problem occur?
    - **Braking/Entry** → Brake bias, front spring/damper compression, front ride height, front ARB
@@ -132,20 +134,21 @@ When analyzing telemetry or a user-described problem, follow this sequence:
 
 When programmatically analyzing an IBT file, produce these sections in order:
 
-1. **Session Header**: Car, driver, track, session type, air/track temp, laps. **Note brake migration availability** (BMW/Acura: NO, Cadillac/Porsche/Ferrari: YES).
+1. **Session Header**: Car, driver, track, session type, air/track temp, laps. **Check brake migration setting in setup** — all GTP cars may have migration available; check the IBT `BrakeBiasMigration` value (0 = off/disabled, 1+ = active). **Note fuel load** — if significantly different from standard race fuel (89L for BMW), flag this as a qualifying/low-fuel run and do NOT compare pushrod values or bottoming patterns directly against full-fuel sessions.
 2. **Setup Dump**: Full `CarSetup` from session info YAML
 3. **Lap Times**: Per-lap with max speed, flag out-laps/in-laps (>130s or <5s of data)
 4. **Tyre Surface Temperatures**: Per-lap, last 40-60% for stability. Format as Outer/Middle/Inner per corner. Flag <70°C as COLD, >105°C as HOT.
 5. **Tyre Conditioning Trend**: Calculate per-corner avg temp at first and last valid lap. Compute °C/lap conditioning rate. Estimate laps needed to reach 85°C window. Vision tread tires (S1 2026+) build temp progressively — a 5-lap stint may not reach operating window; this is normal, not a setup failure.
 6. **Tyre Pressures**: Per-lap hot averages in kPa and PSI. Flag >24 PSI as HIGH, <20 PSI as LOW. Show cold→hot rise.
 7. **Tyre Wear**: End-of-session tread remaining. Calculate wear rate per lap for long stints. Note if wear is disabled (Offline Testing).
-8. **Aero Platform**: Ride heights and heave deflections at >200 km/h — mean, min, σ. Flag bottoming and instability.
+8. **Aero Platform**: Ride heights and heave deflections at >200 km/h — mean, min, σ. Flag bottoming and instability. **CRITICAL: Correlate ALL bottoming events with `LapDistPct` to distinguish kerb strikes from clean-track platform failure.** Report three views: (a) all high-speed data, (b) excluding known kerb zones, (c) excluding kerbs AND known bumpy straights. Only recommend heave spring changes for clean-track bottoming.
 9. **Shock Velocity Analysis**: Compute per-corner shock velocity via finite differences (Δdefl/Δt at tick rate). Report p95, p99, and peak mm/s at >200 km/h. This quantifies whether HS comp slope is appropriate — high peak velocities (>500 mm/s) with linear slope (high click values) indicate the damper is over-damping bump events. Recommend more digressive slope (lower clicks) when peaks exceed 700 mm/s.
+9b. **LS Rebound Ratio Check**: Compare front LS rebound to rear LS rebound click values. If ratio exceeds 1.5×, flag as potential transient understeer source. If below 0.7×, flag as potential entry oversteer. Also compute shock velocity comp/ext ratio during throttle-lift transitions — ratios significantly above 1.0 at the rear confirm the front is holding load while the rear dumps. Target F/R LS rebound ratio: 1.0-1.3×.
 10. **G-Force Envelope**: Peak lateral and longitudinal g (convert m/s² to g by dividing by 9.81).
 11. **Engine Temps**: Water and oil temps per lap.
 12. **Fuel**: Start/end levels, consumption rate, per-lap estimate, range remaining.
-13. **Driver Aids**: Brake bias, TC1, TC2, ABS, **FARB blades, RARB blades** — check if constant (good) or drifting (setup issue). If ARB blades changed during stint, flag this as an active balance search — the driver was tuning mid-session. The final blade position indicates their preferred balance; if blades are maxed (1 or 5+), recommend stepping the ARB diameter instead for a larger, more consistent roll stiffness change.
-14. **Engineering Recommendations**: Prioritized changes with expected effects and verification steps. Reference the impact hierarchy: heave/third springs → aero trim → ARBs → dampers → diff → corner springs → brakes → camber/toe → pressures → gearing.
+13. **Driver Aids**: Brake bias, TC1, TC2, ABS, **FARB blades, RARB blades** — check if constant (good) or changing (requires interpretation). If ARB blades changed during stint, **correlate with track position and speed band before diagnosing**. If the driver is using blades as a corner-by-corner live tool (low blades in slow corners for rotation, high blades at speed for stability), this is intentional and sophisticated — do NOT recommend changing the ARB diameter. Only flag blade drift as a problem if the changes appear random or if blades are maxed in one direction for the entire stint without variation.
+14. **Engineering Recommendations**: Prioritized changes with expected effects and verification steps. **Follow the fix order: rake/ride heights → heave springs → corner springs → ARBs → wheel geometry → dampers.** Dampers are always the last recommendation, not the first. Do not recommend damper changes to fix problems that should be solved by ride height, springs, or ARBs.
 
 ### Unit Conversion Quick Reference
 
@@ -175,7 +178,7 @@ When programmatically analyzing an IBT file, produce these sections in order:
 - Lower front relative to rear → more front downforce → less understeer at speed
 - Lower rear relative to front → more rear downforce → less oversteer at speed
 - **Optimal ride height targets:** ~20 mm front / ~35 mm rear for maximum downforce generation. ~30 mm front produces minimum drag (important for Le Mans, Daytona). The 30.0 mm front RH is also the sim-enforced hard minimum — so at Le Mans you're effectively running the minimum-drag configuration by default.
-- **Bottoming is catastrophic**: Momentary loss of all downforce. If telemetry shows ride height hitting zero or suspension travel maxing out, stiffen heave springs or adjust the parameters that control static ride height (see below).
+- **Bottoming is catastrophic**: Not just "less downforce" — research by Zerihan and Zhang shows that below a critical ride height, one of the two edge vortices driving the underbody flow **bursts**, causing a sudden step-change loss of downforce. Critically, this exhibits **hysteresis**: the vortices hang on well as ride height decreases, but once burst, you have to raise ride height significantly above the burst point to recover them. This means momentary bottoming can create unpredictable, non-recoverable aero loss mid-corner. If telemetry shows ride height hitting zero or suspension travel maxing out, stiffen heave springs or adjust the parameters that control static ride height (see below).
 
 **⚠ CRITICAL: Ride height is a DERIVED VALUE, not a direct garage parameter.** The "Ride Height" displayed in the garage is the *result* of other settings. Never recommend "raise ride height to X mm" as if it's a slider. Instead, recommend changes to the actual input parameters that control ride height:
 - **Pushrod Length Offset** — Primary static ride height control. Less negative (e.g., -29 → -27 mm) raises the corner.
@@ -183,6 +186,11 @@ When programmatically analyzing an IBT file, produce these sections in order:
 - **Spring Perch Offset** (rear coil springs on LMDh) — Adjusts rear spring preload, affecting rear static ride height.
 - **Torsion Bar OD / Turns** (front, and rear on Ferrari) — Stiffer torsion bar resists compression more, indirectly raising ride height.
 - Always verify the resulting ride height in the garage after making changes, and re-check the aero calculator (downforce balance, L/D, front/rear RH at speed).
+
+**⚠ FUEL LOAD CHANGES RIDE HEIGHT.** When fuel load changes significantly (e.g., 89L race → 12L qualifying), the car sits higher because less weight compresses the springs. The driver must adjust pushrod offsets to bring ride height back to the same target. A more negative pushrod offset at low fuel is NOT "lowering the platform" — it's **maintaining the same platform** at a different weight. When analyzing telemetry from different fuel loads:
+- Do NOT compare pushrod values across sessions with different fuel loads
+- Compare the RESULTING ride height in the garage — that's what matters
+- If bottoming appears in a low-fuel session that didn't exist at full fuel, check whether it's a fuel/pushrod issue or a speed/bump issue — lighter cars carry more speed and have less inertia to damp oscillations
 
 **⚠ HARD CONSTRAINT: Front ride height has a sim-enforced minimum of 30.0 mm across ALL GTP cars (BMW, Cadillac, Porsche, Acura, Ferrari).** If the front static ride height reads 29.9 mm or lower, iRacing will reject the setup and display an error. This means:
 - All competitive setups run front RH at exactly 30.0 mm (the floor) for maximum front aero.
@@ -195,68 +203,118 @@ When programmatically analyzing an IBT file, produce these sections in order:
 GTP cars use a sophisticated suspension with **corner springs** (torsion bars on some) AND **heave springs** (third springs). Understanding the interaction is critical:
 
 **Corner Springs (Torsion Bars)**
-- Control single-wheel bump response and contribute to roll stiffness along with ARBs.
+- Control single-wheel bump response and contribute to BOTH heave stiffness AND roll stiffness.
 - Stiffer corner springs → better aero platform (less ride height change) but less mechanical grip over bumps.
 - The F/R spring ratio affects mechanical balance: stiffer front relative to rear → more mechanical understeer.
 
 **Heave Springs (Third Springs / Third Elements)**
-- Control the *symmetric* (both-sides-together) compression — i.e., what happens under braking (front heave) and acceleration (rear heave), and aero load at speed.
-- Heave springs are your primary tool for controlling ride height under aero load without affecting roll stiffness.
+- Connected via a T-bar or linkage between left and right rockers. When both wheels compress together (heave), both rockers rotate the same direction, compressing the heave spring. When one goes up and the other down (roll), opposing rocker motions cancel at the central connection — **zero net displacement of the heave spring in roll.** This is geometric decoupling, not approximation.
+- This resolves an otherwise impossible conflict: ground-effect cars need stiff vertical suspension for ride height control, but soft roll stiffness for mechanical grip. Corner springs increase both together — heave springs break this constraint.
+- The effective wheel rate in heave = corner spring wheel rate + heave spring contribution. Real prototypes run heave springs 1.5-3× stiffer than individual corner springs at the wheel.
 - Stiffer front heave → front doesn't dive as much under braking, maintains front ride height at speed → more consistent front aero.
 - Stiffer rear heave → rear doesn't squat as much under acceleration/aero load → maintains rear ride height.
 - **Heave Perch Offset** adjusts preload on the heave spring. Lower values = more preload = higher ride height through that element.
+- **If you soften corner springs without adjusting heave springs**, total heave stiffness decreases (less than you'd expect, since heave spring contribution remains) but roll stiffness drops significantly. Always consider both when changing either.
 
-**Key insight**: If you want to change aero platform stiffness without affecting mechanical roll balance, adjust heave springs. If you want to change mechanical balance without affecting the aero platform, adjust ARBs. This separation is the core of GTP setup philosophy.
+**Key insight**: If you want to change aero platform stiffness without affecting mechanical roll balance, adjust heave springs. If you want to change mechanical balance without affecting the aero platform, adjust ARBs. This separation is the core of GTP setup philosophy. Real-world WEC teams (Williams F1 reportedly ran zero rear corner springs — only heave + ARB) take this to the extreme.
 
 ### Suspension — Dampers
 
-Dampers control the *rate* of suspension movement, not the *amount* (that's springs).
+Dampers control the *rate* of suspension movement, not the *amount* (that's springs). **Critical concept: "low speed" and "high speed" refer to shaft velocity (mm/s), NOT car speed.** A car at 300 km/h on a smooth straight has low-speed damper activity; a car at 50 km/h hitting a kerb generates high-speed events.
 
-**Low-Speed Compression** — Resists slow suspension movements (driver inputs, weight transfer, cornering). This is your transient handling tool.
-- More front LS compression → faster front weight transfer under braking → more front grip on entry BUT can make the front "skip" over bumps.
+**Real-world damper velocity thresholds (Penske Racing Shocks):**
+- Low-speed: **0–75 mm/s** shaft velocity — body roll, pitch, weight transfer from driver inputs
+- High-speed: **75+ mm/s** — bumps, kerbs, surface impacts
+- Prototype kerb strikes can exceed **750–1000 mm/s** (verified: RF hit 991 mm/s at Sebring T4 kerb)
+
+**Low-Speed Compression** — Resists slow suspension movements (driver inputs, weight transfer, cornering). This is your transient handling tool and what the driver feels most directly.
+- Controls the RATE of weight transfer, not the amount. Stiffer = slower transfer. Softer = faster transfer.
+- **More front LS compression** → resists nose dive → weight transfers to front SLOWER → front tires load gradually. Can feel "locked down" and resist roll, creating entry understeer if the front isn't loading fast enough.
+- **Less front LS compression** → nose dives faster on throttle lift/braking → weight reaches front tires sooner → sharper turn-in. **Primary tool for fixing off-throttle/entry understeer at low speed where aero is irrelevant.**
 - More rear LS compression → more rear stability under acceleration, but can cause rear to slide if too stiff.
 
 **High-Speed Compression** — Resists fast suspension movements (kerbs, bumps, track surface). This is your platform stability tool.
 - More HS compression → better aero platform over rough surfaces, but the car transmits more shock to the tyres.
 - On smooth tracks: can run stiffer HS compression for better platform.
 - On bumpy tracks (e.g., Sebring, COTA): soften HS compression to let the suspension absorb impacts.
+- **If too stiff, the chassis deflects off bumps and tyres lose contact** — this is worse than bottoming in some cases.
 
-**High-Speed Compression Slope** — **The most underutilized parameter in competitive GTP setups.** Controls how digressive the damper curve becomes at high shock velocities.
-- Lower slope (more digressive) → absorbs sharp kerb strikes and bumps while maintaining platform control elsewhere. Essential for Sebring, Watkins Glen, Bathurst.
-- Higher slope (more linear) → consistent damper force across the full velocity range. Suits smooth circuits like Road America, Monza.
+**High-Speed Compression Slope** — **The most underutilized parameter in competitive GTP setups.** Controls the damper force curve shape at high shaft velocities. This maps to real-world damper valving concepts:
+- **Digressive (lower slope values):** High damping at low shaft speeds that tapers off at higher speeds. This is the dominant paradigm in professional motorsport (Penske, Multimatic DSSV). Provides body control where you need it while softening the blow on kerbs/bumps. Essential for Sebring, Watkins Glen, Bathurst.
+- **Linear (higher slope values):** Proportional force increase with velocity. Suits smooth circuits (Road America, Monza) where extreme bump events are rare.
+- **Regressive (not available in iRacing but worth understanding):** Force actually decreases above the knee point. Used in F1 for aggressive kerb riding.
 - Think of it as: HS comp sets the *amount* of high-speed resistance, slope sets the *shape* of the resistance curve.
 
-**Low-Speed Rebound** — Resists the spring extending back after compression. Controls how quickly weight transfers back.
-- More LS rebound → suspension extends more slowly → weight stays transferred longer → can stabilize the car in transitions but can also cause the inside tyre to unload too slowly (less rotation).
+**Low-Speed Rebound** — Resists the spring extending back after compression. Controls how quickly weight transfers AWAY from that corner.
+- More LS rebound → suspension extends more slowly → weight stays on that end longer.
+- Less LS rebound → suspension extends faster → weight leaves that end sooner.
+- **If too stiff, the suspension "packs down"** — fails to fully extend before the next input, causing the car to ride progressively lower through a series of bumps or direction changes.
+
+**⚠ LS REBOUND EFFECTS ARE SPEED-DEPENDENT — the same change can have opposite effects at different speeds:**
+
+**At LOW SPEED (below ~150 kph, minimal aero):** Pure weight transfer mechanics dominate.
+  - **Softer front LS rebound** → nose rises faster after braking → weight leaves front sooner → can reduce front grip too quickly on exit. But also lets the front "release" faster in transitions.
+  - **Softer rear LS rebound** → rear rises/unloads faster on throttle lift → weight transfers FORWARD faster → more front grip → promotes rotation. **This is a primary tool for fixing low-speed off-throttle understeer.** The rear lightening helps the car pivot.
+  - **Stiffer rear LS rebound** → holds weight on the rear → resists the rear from unloading → MORE rear grip off-throttle → resists rotation → can cause understeer.
+
+**At HIGH SPEED (above ~200 kph, significant aero):** Ride height and rake effects dominate weight transfer effects.
+  - **Stiff front LS rebound** → holds nose down after braking → maintains rake → preserves rear aero grip through corner entry.
+  - **Soft rear LS rebound** → rear rises rapidly on throttle lift → diffuser exits efficient range → rear aero grip drops. At high speed this aero loss can overwhelm the mechanical rotation benefit.
+  - The crossover point where aero effects overtake weight transfer effects is car-specific and speed-dependent. On cars with aggressive ground effect (all GTP), the aero effect becomes significant above ~150-180 kph.
+
+**When diagnosing understeer, always identify the SPEED at which it occurs before recommending rebound changes.** Low-speed understeer (T7 hairpin at 80 kph) and high-speed understeer (T15 at 250 kph) may require opposite damper directions.
 
 **High-Speed Rebound** — Resists fast extension (after hitting a bump). If too stiff, the tyre can lose contact with the road as the suspension can't extend fast enough to follow the surface.
 
-**General damper philosophy for GTP**: Start with moderate settings. Only adjust after springs, ARBs, and aero are sorted. Dampers are fine-tuning tools, not primary balance tools. **Current meta (2025-2026):** Rebound slightly stiffer than compression, prioritizing controlled platform recovery through direction changes.
+**Rebound-to-compression ratio:** Real-world racing dampers typically run rebound forces approximately **2× compression forces** at equivalent shaft velocities. This produces roughly equal peak forces because compression sees higher velocities from bump inputs. **Current meta (2025-2026):** Rebound slightly stiffer than compression, prioritizing controlled platform recovery through direction changes.
+
+**Damper velocity histograms (telemetry diagnostic):** A symmetrical bell-curve distribution of damper velocities indicates well-tuned dampers. Flat or asymmetrical distributions signal mis-valved dampers. If the histogram shows heavy concentration at extreme velocities, the springs are too soft (the dampers are doing the springs' job).
+
+**General damper philosophy for GTP**: Dampers are step 6 of 6 in the setup workflow. Only adjust after rake, heave springs, corner springs, ARBs, and wheel geometry are sorted. **If the car has a handling problem, exhaust steps 1-5 before reaching for dampers.** Dampers control the rate of weight transfer — they fine-tune HOW the car transitions, not WHERE the balance sits. If the steady-state balance is wrong, dampers cannot fix it.
+
+**⚠ CRITICAL DIAGNOSTIC RULE: When a driver reports understeer or oversteer, ALWAYS identify the SPEED and CORNER PHASE first.** The same damper change can have opposite effects at different speeds:
+- Below ~150 kph: Weight transfer rate dominates. Softer front LS comp = faster nose dive = more front grip = less understeer. Softer rear LS rebound = rear unloads faster = promotes rotation.
+- Above ~200 kph: Aero/ride height effects dominate. Changes that alter ride height and rake can overwhelm weight transfer effects. Stiff front rebound maintains rake. Rear ride height changes affect diffuser.
+- The 150-200 kph range is a transition zone where both effects compete. Car-specific testing required.
+**Never recommend damper changes for "understeer" without knowing the speed at which it occurs.**
 
 ### Anti-Roll Bars (ARBs)
 
 **ARBs are the single most important tool for adjusting mechanical balance in GTP cars.** Because heave/third springs have zero effect on roll stiffness, ARBs carry the entire mechanical roll balance responsibility. This is fundamentally different from cars with conventional spring setups.
 
+**The physics: Lateral Load Transfer Distribution (LLTD).** Total lateral load transfer in a corner is fixed by physics (mass, lateral g, CG height, track width) — ARBs cannot change total load transfer. They control its **distribution between front and rear axles.** A stiffer front ARB shifts more load transfer to the front. Due to tire load sensitivity (grip coefficient decreases as load increases), the more heavily loaded axle produces less total grip. So: stiffer front ARB → front carries more load transfer → less net front grip → understeer. OptimumG's Claude Rouelle calls LLTD the "Magic Number" — baseline should sit ~5% higher than static front weight distribution.
+
 **ARB Size** — Primary roll stiffness control per axle. Larger diameter = stiffer.
-- Stiffer front ARB → more understeer (reduces front grip in roll)
-- Stiffer rear ARB → more oversteer (reduces rear grip in roll)
+- Stiffer front ARB → front carries more load transfer → front loses grip AND rear gains grip → understeer
+- Stiffer rear ARB → rear carries more load transfer → rear loses grip AND front gains grip → sharper front-end bite, more rotation
+- The effect is always on BOTH axles simultaneously — stiffer at one end means the other end carries less load transfer and gains relative grip
 - Disconnecting an ARB entirely removes that axle's roll resistance through the bar — can dramatically change handling.
 
-**ARB Blades** — Fine-tuning adjustment for ARB stiffness. Higher blade values = more force transferred to the bar = stiffer effective ARB.
+**ARB Blades** — Rotating a flat, tapered plate about its longitudinal axis. Vertical orientation = maximum second moment of area = maximum stiffness. Horizontal = minimum. The relationship is highly nonlinear with rotation angle because stiffness varies with the square of the cross-section dimension.
 - Use blades for small adjustments between ARB diameter steps.
-- Think of blade adjustments as "clicks" between the major "steps" of ARB diameter.
-- **Blades are adjustable from the cockpit via the F8 black box** (dcAntiRollFront / dcAntiRollRear). Experienced drivers adjust FARB/RARB corner by corner during sessions — this is the most commonly used in-car tuning parameter.
+- **Blades are adjustable from the cockpit via the F8 black box** (dcAntiRollFront / dcAntiRollRear). Experienced drivers adjust FARB/RARB corner by corner during sessions — this is the most commonly used in-car tuning parameter. When analyzing telemetry, check `dcAntiRollFront` and `dcAntiRollRear` for changes during stints. If the driver is using the full blade range deliberately (soft for slow corners, stiff for high speed), this is sophisticated live management — do NOT recommend stepping the ARB diameter, as it would shift the entire range and potentially eliminate the soft end needed for rotation.
+- **Common GTP ARB strategy:** Keep the front ARB blades at or near 1 (maximum front grip) and use rear ARB blades as the primary live balance variable. The mechanism works on BOTH axles through LLTD: stiffer rear ARB shifts load transfer to the rear → front carries less load transfer → front tires stay more evenly loaded → **front gains grip and bites harder into turns.** Simultaneously the rear loses grip from carrying more load transfer. Both effects compound: sharp front-end bite + freer rear = aggressive rotation. Softer rear ARB reverses this — load transfer distributes more evenly, front has less relative bite, rear has more grip, car is stable. The front CAN be adjusted but current coaching meta favors keeping it low and using the rear as the single tuning knob. This single-variable approach is clean and effective, especially on cars like the BMW that naturally resist rotation at high speed.
+- **This is a confirmed professional real-world technique.** OptimumG teaches fixing one ARB and adjusting only the other as a single balance variable. It reduces dimensionality and gives clearer cause-and-effect. If the adjustable ARB runs out of range, it signals springs need changing — not adding more ARB.
 
-**ARB tuning strategy**: ARBs primarily affect mid-corner and transitional balance. If the car understeers mid-corner at low-to-medium speed, soften the front ARB or stiffen the rear. This is independent of aero balance (which dominates at high speed).
+**ARB tuning strategy**: ARBs primarily affect mid-corner and transitional balance. If the car understeers mid-corner at low-to-medium speed, soften the front ARB or stiffen the rear. This is independent of aero balance (which dominates at high speed). **If you need to fix a slow-corner problem, use ARBs. If you need to fix a fast-corner problem, use aero (ride height, wing, heave springs).**
 
 ### Differential
 
-**Diff Preload** — Controls how much the rear axle resists differential wheel speed. This is a massively impactful parameter in GTP cars.
+**Diff Preload** — Static baseline locking force applied to the clutch pack. Controls how much the rear axle resists differential wheel speed at all times, including zero-throttle conditions.
 - More preload → rear axle acts more like a locked diff → more stability on entry and mid-corner, but less rotation and can cause inside rear to drag (understeer on exit in tight corners).
 - Less preload → more differential action → car rotates more freely, but can be unstable on entry, especially under trail braking.
 - **The Acura ARX-06 is especially sensitive to diff preload** — small changes create large handling shifts.
 
-**Diff interaction with tyre temps**: High preload can overheat the inside rear tyre in long corners as it's being dragged. Check telemetry for asymmetric rear tyre temps.
+**Coast/Drive Ramp Angles** — Angled ramps convert input torque into axial clamping force on friction plates. The angle determines how aggressively torque creates locking force.
+- **Drive ramp angles** (typically 30°-60°, lower = more aggressive): Control locking under power application. Lower angles lock the diff more aggressively on throttle → improves traction but can create exit understeer as the inside wheel is dragged faster than its natural speed.
+- **Coast ramp angles** (typically 60°-90°): Control locking under deceleration/lift-off. Lower coast angles add stability under braking and trail-braking but create entry understeer as the diff resists speed differentiation during turn-in.
+- Drive and coast can be tuned independently to create different behavior under power vs off-power.
+
+**Clutch Friction Plates** — Acts as a multiplier on total locking force. More plates = more clamping force for the same preload and ramp angles. Reducing plates weakens ALL locking (coast, drive, and preload effect) proportionally. **If the car understeers off-throttle and the coast ramp is already set to less locking, reducing clutch plates is the next lever** — it reduces the overall strength of the coast-side locking without requiring ramp angle changes.
+
+**Diff interaction with tyre temps**: High preload or aggressive ramp angles overheat the inside rear tyre in long corners as it's being dragged. Check telemetry for asymmetric rear tyre temps — if inside rear is consistently hotter than outside rear, diff locking is too aggressive.
+
+**Diff interaction with hybrid regen**: On cars with rear-axle hybrid (all LMDh), the MGU delivers torque through the differential. The diff's locking characteristics affect how regen braking distributes between left and right wheels. This means diff changes can alter the feel of brake-by-wire on cars that have it.
 
 ### Tyre Pressures
 
@@ -301,24 +359,49 @@ Dampers control the *rate* of suspension movement, not the *amount* (that's spri
 - If the car doesn't reach the limiter at all on the longest straight, gearing may be too tall (losing acceleration out of slow corners).
 - Gear spacing should give usable RPM range in each gear through the important corners.
 
-## Setup Workflow — Building From Scratch
+## Setup Workflow — Analysis & Fix Order
 
-When asked to help build a setup or evaluate one, follow this priority order:
+**Dampers are the FINAL tweaks, not the first tool you reach for.** When analyzing a setup or diagnosing a handling problem, work through parameters in this order every time. Do not skip ahead to dampers before the foundation is right.
 
-1. **Ride heights & aero** — Set the aero balance for the track's speed profile. Establish ride heights via pushrod length offsets and spring/heave perch offsets (NOT a direct "ride height" parameter). Verify in garage and aero calculator.
-2. **Heave springs** — Set the aero platform stiffness. Ensure the car isn't bottoming.
-3. **Corner springs** — Set mechanical stiffness appropriate to track surface.
-4. **ARBs** — Dial in mechanical mid-corner balance.
-5. **Dampers** — Fine-tune transient response.
-6. **Diff** — Dial in rotation vs stability.
-7. **Tyre pressures** — Iterate based on running data.
-8. **Alignment (camber/toe)** — Fine-tune tyre utilization.
-9. **Gearing** — Match to track.
-10. **Brake bias** — Set for driver preference within the setup's balance window.
+1. **Rake (ride heights)** — Front-to-rear ride height split is the single most powerful balance tool. More rake = more oversteer. Less rake = more understeer. Establish ride heights via pushrod offsets and perch offsets (NOT a direct "ride height" parameter). Verify in garage and aero calculator. At high speed, rake determines aero balance. At low speed, it shifts CG and roll center heights. **This is always the first thing to evaluate and adjust.**
+2. **Heave springs (third springs)** — Control the aero platform stiffness under downforce. Ensure the car isn't bottoming on clean track. Set front heave to maintain ride height at speed without excessive bottoming. Set rear third spring to control rear platform oscillation. These operate independently of roll stiffness (ARBs).
+3. **Corner springs (torsion bars / coil springs)** — Set mechanical stiffness appropriate to the track surface and the car's roll requirements. Stiffer = better platform but less mechanical grip. Softer = more grip but more ride height variation. Corner spring changes affect BOTH heave stiffness and roll stiffness — always re-check ride height and aero calculator after changing.
+4. **ARBs** — Dial in mechanical mid-corner balance via LLTD. This is the primary steady-state cornering balance tool. ARBs do not affect heave stiffness — they are independent of the aero platform.
+5. **Wheel geometry (camber & toe)** — Fine-tune tyre utilization and thermal behavior. Camber controls contact patch shape in roll. Toe controls turn-in response and straight-line scrub/heat. Adjust based on tyre temperature readings (inner/outer spread for camber, overall temp for toe).
+6. **Dampers** — The final tweaks. Dampers control the RATE of weight transfer, not the amount. They fine-tune transient response (corner entry, exit, direction changes) after the foundation (ride heights, springs, ARBs, geometry) is established. **Do not use dampers to fix problems that should be solved by rake, springs, or ARBs.** Damper effects are speed-dependent — always identify the speed at which the problem occurs before recommending changes.
 
-**Always iterate**: After major changes (steps 1-4), re-check tyre data and ride height traces. Setup parameters interact — a spring change affects ride height which affects aero which affects everything.
+**Supporting parameters (adjust as needed throughout):**
+- **Diff** — Rotation vs stability, coast vs drive locking. Adjust after ARBs establish steady-state balance.
+- **Brake bias** — Match to the car's weight transfer and driver preference. Iterate after major suspension changes.
+- **Tyre pressures** — Iterate based on running data. Constrained by 152 kPa minimum cold in iRacing GTP.
+- **Gearing** — Match to track. Usually set once and left alone.
 
-**Hierarchy of impact (highest → lowest):** Heave/third spring rates → Aero trim (wing + ride height) → ARB balance → Damper settings → Differential → Corner springs → Brake setup → Camber/toe → Tyre pressures → Gearing. Most drivers and even many experienced setup engineers underweight the heave spring system and overweight corner springs and camber. **The aero platform is overwhelmingly the dominant performance factor in GTP cars.**
+**Always iterate**: After changes to steps 1-4, re-check tyre data and ride height traces. Setup parameters interact — a spring change affects ride height which affects aero which affects everything.
+
+**Hierarchy of impact (highest → lowest):** Rake/ride heights → Heave/third springs → Corner springs → ARBs → Wheel geometry → Dampers. The first three control the aero platform and mechanical foundation. ARBs control steady-state balance. Geometry fine-tunes tyre behavior. Dampers are the final polish on transient response.
+
+### The Parameter Cascade — Nothing Is Free
+
+**The fundamental cascade:** spring rate → ride height → aero load → tire load → grip → balance. Every setup change propagates through this chain. Soften rear springs → more rear compression under aero load → rear ride height drops on straights → diffuser performance changes → aero balance shifts — all from a spring change intended to improve mechanical grip. Changing ride height simultaneously alters camber geometry, toe geometry, roll center position, and bump stop engagement.
+
+**Common setup traps (from real-world race engineering):**
+- Chasing understeer with more front wing angle → increases drag, may reduce rear stability at speed
+- Softening springs for mechanical grip → car wanders through the aero map unpredictably
+- Using ARBs to compensate for an aero balance deficit → works at one speed but creates the opposite problem at another
+- Stiffening heave springs to stop bottoming that was actually kerb strikes → loses mechanical grip everywhere for a problem that only exists at one corner (see Sebring T4 lesson)
+- **The "fix one symptom, create another" trap:** Always ask "what else does this change affect?" before recommending. Think through the cascade.
+
+**Fuel load variation:** 80-110 kg of fuel burns off during a stint (8-11% of the 1,030 kg min weight). As fuel depletes: total weight decreases, ride height rises as springs uncompress, aero operating point shifts, weight distribution changes, tire loading decreases. Teams optimize for mid-stint fuel load and accept compromises at full and empty. If a driver reports the car "goes away" late in a stint, it may be fuel-related ride height/aero shift, not tire degradation. **When switching between race fuel and qualifying fuel, the driver must re-set pushrod offsets to maintain the same target ride height.** A more negative pushrod at low fuel compensates for less spring compression — it's maintaining the same platform, not changing it. Never compare raw pushrod values across sessions with different fuel loads — compare the resulting garage ride height instead.
+
+### Tire Conditioning Physics
+
+**Why new tires are slow:** Fresh tires carry mold release agents on their surface and have polymer chains in their as-manufactured state — non-uniform with residual stresses from molding. The rubber compound's grip is governed by its glass transition temperature (Tg), where two mechanisms peak simultaneously: indentation (road texture deforms rubber) and molecular adhesion (Van der Waals bonding at the interface).
+
+**Conditioning involves two processes:**
+1. **Surface scrubbing (2-3 laps):** Removes mold release agents, roughens the glassy manufacturing skin.
+2. **Heat cycling (full operating temp → slow cool over 24+ hours):** Breaks weakest molecular bonds, driving forces during cornering realign the granular structure, volatile petroleum components boil off. Upon slow cooling, broken bonds relink in a stronger, more uniformly aligned configuration. Result: more consistent (not necessarily peak) grip throughout the tire's life.
+
+**iRacing's Vision tread model (S1 2026+)** simulates this conditioning process — temps build progressively over a stint as the "long-term conditioning state" develops. A 5-lap stint may not reach operating window; this is normal, not a setup failure. Out-laps are genuinely precarious (S2 2025+ tire model). For sprint qualifying, setup changes (more camber, more toe-out) can accelerate thermal buildup. For endurance, the model handles conditioning naturally over 8-15 laps.
 
 ## Communicating Setup Changes
 

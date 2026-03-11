@@ -1,0 +1,149 @@
+"""TrackProfile dataclass and extraction logic.
+
+Extracts track characteristics from parsed IBT telemetry:
+- Surface frequency spectrum (shock velocity histograms)
+- Braking zone locations, entry speeds, deceleration demands
+- Corner speeds, lateral g demands, radius estimates
+- Speed profile (% of lap in speed bands)
+- Kerb locations and severity
+- Elevation changes
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+
+import numpy as np
+
+
+@dataclass
+class BrakingZone:
+    """A single braking event on the track."""
+    lap_dist_m: float           # Distance from S/F at brake application
+    entry_speed_kph: float      # Speed when braking starts
+    min_speed_kph: float        # Speed at corner apex (end of braking)
+    peak_decel_g: float         # Peak longitudinal deceleration (positive = braking)
+    braking_dist_m: float       # Distance from brake point to apex
+
+
+@dataclass
+class Corner:
+    """A corner on the track."""
+    lap_dist_m: float           # Apex distance from S/F
+    speed_kph: float            # Apex speed
+    peak_lat_g: float           # Peak lateral g through corner
+    radius_m: float             # Estimated radius from v^2 / (lat_g * 9.81)
+    direction: str              # "left" or "right"
+
+
+@dataclass
+class KerbEvent:
+    """A kerb strike event."""
+    lap_dist_m: float           # Distance from S/F
+    severity: float             # Peak vertical acceleration spike (g)
+    side: str                   # "left", "right", or "both"
+
+
+@dataclass
+class TrackProfile:
+    """Complete track demand profile extracted from telemetry."""
+
+    # Identity
+    track_name: str
+    track_config: str
+    track_length_m: float
+    car: str
+    best_lap_time_s: float
+
+    # Speed profile
+    speed_bands_kph: dict[str, float] = field(default_factory=dict)
+    median_speed_kph: float = 0.0
+    max_speed_kph: float = 0.0
+    min_speed_kph: float = 0.0
+
+    # G-force envelope
+    peak_lat_g: float = 0.0
+    peak_braking_g: float = 0.0
+    peak_accel_g: float = 0.0
+    peak_vertical_g: float = 0.0
+
+    # Braking zones
+    braking_zones: list[BrakingZone] = field(default_factory=list)
+
+    # Corners
+    corners: list[Corner] = field(default_factory=list)
+
+    # Surface frequency spectrum
+    shock_vel_histogram_front: dict[str, int] = field(default_factory=dict)
+    shock_vel_histogram_rear: dict[str, int] = field(default_factory=dict)
+    shock_vel_by_sector: dict[str, dict] = field(default_factory=dict)
+    shock_vel_p50_front_mps: float = 0.0
+    shock_vel_p95_front_mps: float = 0.0
+    shock_vel_p99_front_mps: float = 0.0
+    shock_vel_p50_rear_mps: float = 0.0
+    shock_vel_p95_rear_mps: float = 0.0
+    shock_vel_p99_rear_mps: float = 0.0
+
+    # Kerb events
+    kerb_events: list[KerbEvent] = field(default_factory=list)
+
+    # Elevation profile (sampled)
+    elevation_profile: list[dict] = field(default_factory=list)
+    elevation_change_m: float = 0.0
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict."""
+        d = asdict(self)
+        # Convert BrakingZone/Corner/KerbEvent lists to plain dicts
+        d["braking_zones"] = [asdict(bz) for bz in self.braking_zones]
+        d["corners"] = [asdict(c) for c in self.corners]
+        d["kerb_events"] = [asdict(k) for k in self.kerb_events]
+        return d
+
+    def save(self, path: str | Path) -> None:
+        """Save profile as JSON."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2))
+
+    @staticmethod
+    def load(path: str | Path) -> "TrackProfile":
+        """Load profile from JSON."""
+        data = json.loads(Path(path).read_text())
+        # Reconstruct nested dataclasses
+        data["braking_zones"] = [BrakingZone(**bz) for bz in data["braking_zones"]]
+        data["corners"] = [Corner(**c) for c in data["corners"]]
+        data["kerb_events"] = [KerbEvent(**k) for k in data["kerb_events"]]
+        return TrackProfile(**data)
+
+    def summary(self) -> str:
+        """Human-readable summary."""
+        mins = int(self.best_lap_time_s) // 60
+        secs = self.best_lap_time_s - mins * 60
+        lines = [
+            f"Track: {self.track_name} — {self.track_config}",
+            f"Car: {self.car}",
+            f"Best lap: {mins}:{secs:06.3f}",
+            f"Track length: {self.track_length_m:.0f} m",
+            f"",
+            f"Speed: {self.min_speed_kph:.0f}–{self.max_speed_kph:.0f} kph "
+            f"(median {self.median_speed_kph:.0f} kph)",
+            f"Peak lat: {self.peak_lat_g:.2f} g",
+            f"Peak braking: {self.peak_braking_g:.2f} g",
+            f"Peak accel: {self.peak_accel_g:.2f} g",
+            f"",
+            f"Braking zones: {len(self.braking_zones)}",
+            f"Corners: {len(self.corners)}",
+            f"Kerb events: {len(self.kerb_events)}",
+            f"Elevation change: {self.elevation_change_m:.1f} m",
+            f"",
+            f"Shock velocity (front): p50={self.shock_vel_p50_front_mps*1000:.1f} mm/s, "
+            f"p95={self.shock_vel_p95_front_mps*1000:.1f} mm/s, "
+            f"p99={self.shock_vel_p99_front_mps*1000:.1f} mm/s",
+            f"Shock velocity (rear):  p50={self.shock_vel_p50_rear_mps*1000:.1f} mm/s, "
+            f"p95={self.shock_vel_p95_rear_mps*1000:.1f} mm/s, "
+            f"p99={self.shock_vel_p99_rear_mps*1000:.1f} mm/s",
+        ]
+        return "\n".join(lines)

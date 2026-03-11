@@ -17,9 +17,15 @@ This file contains car-specific setup knowledge. Sections marked with **[VERIFIE
 
 ## Critical Architecture Differences {#architecture}
 
-**This is the most important section in this file.** The five GTP cars use fundamentally different setup UI structures. Parameter names, value types, and even what's adjustable differs between cars. Never assume a parameter from one car maps directly to another.
+**This is the most important section in this file.** The five GTP cars use fundamentally different setup UI structures AND fundamentally different real-world chassis philosophies. Parameter names, value types, and even what's adjustable differs between cars. Never assume a parameter from one car maps directly to another.
 
-### LMDh Cars (BMW, Cadillac, Acura) — Dallara Chassis
+### Real-World Chassis Context
+- **Dallara LMDh** (BMW, Cadillac): Shared carbon monocoque spine, but firewalled OEM-specific teams with locked rooms. Led by CTO Aldo Costa (ex-Mercedes F1). 80+ engineers across shared and OEM teams. Despite shared monocoque, differentiation through bodywork, engine, electronics, cooling. Pushrod-actuated double-wishbone with Penske adjustable dampers.
+- **Multimatic LMDh** (Porsche 963): True clean-sheet design, 16,705 individual parts. Critical advantage: proprietary **DSSV (Dynamic Suspensions Spool Valve)** dampers — spool valves instead of shim stacks, only 4% force degradation from 30-120°C (vs 14-16% for conventional). Being both chassis and damper supplier creates uniquely tight integration. The Porsche's 4.6L V8 Biturbo is a structural element carrying chassis loads.
+- **ORECA LMDh** (Acura ARX-06): LMP2-derived chassis bringing that platform's proven dynamics to Hypercar.
+- **Ferrari 499P bespoke LMH**: Complete design freedom for chassis, hybrid, and battery. Monocoque is Ferrari's proprietary design (manufactured by Dallara for quality). 3.0L twin-turbo V6 is a fully stressed member. **200 kW front-axle electric motor** with its own differential — 4× the hybrid power of LMDh's spec 50 kW Bosch system, deploying at the front rather than rear. 900V F1-derived battery.
+
+### LMDh Cars (BMW, Cadillac, Acura) — iRacing Parameter Structure
 - **Rear suspension:** Coil springs with `SpringRate` (N/mm) and `SpringPerchOffset` (mm)
 - **Rear heave:** Called "Third" — `ThirdSpring` (N/mm), `ThirdPerchOffset` (mm)
 - **Dampers organized under:** `CarSetup_Chassis_[Corner]_[DamperParam]`
@@ -27,10 +33,12 @@ This file contains car-specific setup knowledge. Sections marked with **[VERIFIE
 - **ARB values:** Descriptive labels ("Soft", "Medium", "Stiff") — NOT numeric
 - **Brakes/Diff/TC/Gears under:** `CarSetup_BrakesDriveUnit_`
 - **Diff:** Preload (Nm) + ClutchFrictionPlates + CoastDriveRampAngles
+- **All use spec Xtrac P1359 7-speed sequential gearbox** with integrated clutch-plate limited-slip differential
 
 ### Porsche 963 — Multimatic Chassis
 - Different suspension geometry from the Dallara cars. Same numeric setup value may produce different response.
 - Similar parameter structure to LMDh cars but with Multimatic-specific geometry.
+- **Multimatic DSSV dampers respond more progressively** and maintain more consistent force across temperature ranges than conventional shim-stack dampers. This is why the Porsche feels different from Dallara cars even at identical numeric damper settings.
 
 ### Ferrari 499P — Bespoke LMH Chassis
 - **Rear suspension:** Torsion bars with `TorsionBarOD` (indexed, not mm) and `TorsionBarTurns`
@@ -40,7 +48,8 @@ This file contains car-specific setup knowledge. Sections marked with **[VERIFIE
 - **ARB values:** Letter indices ("A", "B", "C") — NOT descriptive labels
 - **Brakes/Diff/TC/Gears under:** `CarSetup_Systems_`
 - **Diff:** Has BOTH `FrontDiffSpec_Preload` AND `RearDiffSpec_Preload` + CoastDriveRampOptions + ClutchFrictionPlates
-- **Extra hybrid param:** `HybridRearDriveEnabled`, `HybridRearDriveCornerPct`
+- **Extra hybrid params:** `HybridRearDriveEnabled`, `HybridRearDriveCornerPct`
+- **Front-axle hybrid deploys only >190 km/h** — below that speed, the 499P is pure RWD. Above, the front MGU provides up to 100 kW of torque vectoring. The front BBW system works inversely to LMDh (front BBW vs LMDh's rear BBW), meaning the brake feel characteristics are fundamentally different.
 
 ---
 
@@ -116,16 +125,26 @@ Note: BMW has relatively low damper click values compared to Ferrari. The scales
 - **Cold tyre snap:** Notably worse than other GTP cars on out-laps. The Garage 61 setup runs soft front ARB and modest damping which helps but doesn't eliminate this.
 - **Rear ARB sensitivity:** One step in ARB diameter can swing balance dramatically. The verified setup uses "Medium" rear ARB — this is the middle ground. Use blades (3 in this setup) for fine-tuning.
 - **Low brake bias (46%):** Much lower than the Ferrari (56.5%). BMW front brakes are aggressive and the car has a tendency to lock fronts, so bias sits further rearward.
-- **Rear third spring is massive (530 N/mm):** This keeps the rear aero platform extremely stiff. The front heave at only 30 N/mm is deliberately soft by comparison — this allows the front to breathe over bumps while the rear stays planted.
+- **Rear third spring is massive (530 N/mm):** This keeps the rear aero platform extremely stiff. The front heave runs at 50 N/mm — this is the minimum safe value at Sebring. **Do not run front heave below 50 N/mm** — Garage61's 30 N/mm variant produced 22 clean-track bottoming events in 3 laps with vortex burst aero instability.
 - **Pressure rise is aggressive:** Starting at 152 kPa (22.0 PSI) cold — the **minimum allowed** — hot pressures reach 181-185 kPa (26.2-26.8 PSI) by lap 4. This is 3-5 PSI over ideal hot window, but **152 kPa is the lowest cold pressure available in iRacing GTP**. Cannot be addressed through pressure alone — manage tyre performance via camber, alignment, and spring/damper tuning instead.
-- **Front platform bottoming at Sebring:** With 30 N/mm front heave spring, the front ride heights drop to -1.1 mm (LF) and -4.9 mm (RF) at >200 km/h on Sebring's bumps. Front heave σ=7.66 mm at speed (threshold: <5 mm). **Front static RH sits at the 30.0 mm sim-enforced floor (all GTP cars — 29.9 mm fails setup validation).** Raising front RH sacrifices front aero. Primary bottoming fix: stiffen front heave spring (50 N/mm insufficient at Sebring, try 65-75 N/mm), increase front HS comp damping, adjust HS comp slope. You can also re-balance pushrod offset vs heave perch offset vs torsion bar settings to change preload characteristics while holding 30.0 mm static RH.
-- **Rear also bottoms despite stiff third spring:** LR hit -4.6 mm at speed. Rear ride height σ=7.0-7.4 mm. To raise rear ride height ~2mm on rough circuits: adjust rear pushrod length offset (less negative, e.g., -29 → -27 mm) and/or reduce rear third perch offset (e.g., 42.5 → 40 mm for more heave preload). Verify resulting ride height in garage and re-check aero calculator balance.
+- **Front platform at Sebring — heave 50 is the minimum safe value:** Garage61's heave 30 N/mm produced 22 clean-track bottoming events in 3 laps (LF -4.6mm, LR -12.6mm) with a 2.45s lap-time spread — the aero platform was cutting in and out through the vortex burst threshold. Heave 50 N/mm eliminated all front clean-track bottoming. **Do not run heave below 50 N/mm on the BMW at Sebring.** The original Grid-and-Go setup (heave 50) was correct; the Garage61 variant (heave 30) sacrificed platform safety for mechanical compliance. Kerb strikes (T4 at 10-15%) remain intentional driving choices, not setup failures — always correlate bottoming with track position before recommending heave spring changes. **Front static RH sits at the 30.0 mm sim-enforced floor (all GTP cars — 29.9 mm fails setup validation).**
+- **Rear back-straight bottoming — resolved via HS comp progression:** LR bottomed to -3.5mm at 44-47% (back straight bumps at 251 kph) on the original Grid-and-Go setup. Rear σ=9.9mm in this zone. Fixed across 4 sessions:
+  - S1 (Garage61, heave 30): 22 clean-track bottoming events — dangerous, heave spring inadequate
+  - S2 (heave 50, rear comp 6, rear slope 10): 4 clean-track events — massive improvement
+  - S3 (+ front slope 10, comp 5, pushrod -27): 0 clean-track events — race-ready
+  - S4 (+ rear comp 7, low fuel 12L): 0 back-straight events — back straight fully resolved
+  - **Fix was primarily rear HS comp (5→6→7) and HS comp slope (11→10).** The rear third spring at 530 N/mm was already adequate — the damping was the missing piece. Do not increase third spring as a first response to rear bottoming.
+- **[VERIFIED S1 2026] Fuel-load pushrod compensation:** When switching from race fuel (89L) to qualifying fuel (12L), pushrods must be adjusted more negative to maintain the same target ride height. Less fuel = less weight = springs uncompress = car sits higher. The S4 qualifying run used pushrod -29.5mm (vs -27.0mm in S3 at 89L) to maintain 49.9mm rear RH. **This is not a setup change — it's maintaining the same platform at different weight.** Never flag pushrod differences between sessions without checking fuel load first. Compare resulting garage ride height, not raw pushrod values.
+- **Pit-straight bump at 99.6% (qualifying specific):** S4 showed 3 transient bottoming events at 99.6% track position (pit straight before T1) at 250 kph — LR -8.4mm, RR -9.1mm simultaneously. This bump hits both rears together (heave event, not roll). Not seen in full-fuel S1-S3 sessions — the lighter qualifying car carries more speed approaching T1 and has less inertia to damp oscillation. Accept it (0.05s transient, not affecting 1:48.80 pace) or address via rear HS rebound if the car is arriving unsettled.
 - **Tyre wear pattern:** Rears wear ~2x faster than fronts (LR 7.8%, RR 6.9% vs LF 4.0%, RF 4.4% after 4 full laps). Monitor diff preload (20 Nm) and rear ARB if rear degradation compounds in long stints.
 - **Surface temp asymmetry (track-dependent):** Right-side tyres show 12-13°C inner-outer spread vs 4-6°C on left side at Sebring (right-hand dominant track). Normal for track layout — only address if persistent after pressure correction.
-- **[VERIFIED S1 2026] Rear ARB blade drift during stint:** Telemetry showed RARB blades adjusted 1→5 via F8 black box during a 5-lap stint — driver actively searching for rear mechanical balance. When blades max out at 5 on "Medium" ARB diameter, step up to "Stiff" diameter with blades at 2-3 instead. This gives a larger, more consistent roll stiffness step with tuning room in both directions.
-- **[VERIFIED S1 2026] Shock velocities at Sebring justify HS comp slope change:** RF peak shock velocity reached 991 mm/s at >200 km/h, rears 682-805 mm/s. At slope=11 (linear), the damper applies full force at these extremes, contributing to bottoming. Slope 9-10 (more digressive) softens response at peak velocities while maintaining platform control at normal shock speeds (p95: 120-182 mm/s).
+- **[VERIFIED S1 2026] RARB as primary live balance tool, FARB kept at or near 1:** Current coaching advice is to keep front ARB blades at 1 or near 1 (maximum front mechanical grip). Front CAN be adjusted but the recommended approach is to use the rear ARB blades as the primary live balance variable. The mechanism works through LLTD (Lateral Load Transfer Distribution) on BOTH axles simultaneously:
+  - **Stiffer rear ARB (blade 4-5):** Shifts more load transfer to the rear → front carries LESS load transfer → front tires stay more evenly loaded → front GAINS grip → **sharper front-end bite and turn-in.** Simultaneously, rear tires are more unevenly loaded → rear loses grip → car pivots around a strong front end. Both effects compound for aggressive rotation.
+  - **Softer rear ARB (blade 1):** Load transfer splits more evenly between axles → front has less relative bite, rear has more grip → stable, planted rear → no snap oversteer. Important at slow speed where there's no aero downforce to stabilize the car.
+  - Telemetry shows 6-10 RARB changes per lap: blade 1 for slow corners (avg 1.2 at <80 kph), blade 4-5 for high-speed sections (avg 4.2 at >2.5g lateral). Best lap (1:49.98) used this full range. **The Medium rear ARB diameter is correct — it provides the 1-5 blade range the driver needs.**
+- **[VERIFIED S1 2026] Shock velocities at Sebring — slope 10 confirmed effective:** RF peak 991 mm/s was a T4 kerb strike on slope 11 (linear). Progression across sessions: p99 values dropped consistently with slope change (LR p99: 323→307→286 mm/s from slope 11→10). Peak values are stochastic single events, but the 99th percentile improvement confirms the digressive slope is working at the critical frequency range. **Slope 10 on all four corners is the validated Sebring setting.** Slope 11 (linear) applies excessive force at extreme velocities; slope 9 may be worth testing on bumpier tracks but is unvalidated.
 - **[VERIFIED S1 2026] Vision tread tire conditioning rates at Sebring:** Fronts condition at +2.2-2.6°C/lap, rears at +2.9-3.5°C/lap. At these rates, rears reach 85°C operating window by lap 8-9, fronts by lap 13-15. A 5-lap Offline Testing stint will NOT reach operating temps — this is normal Vision tread conditioning behavior, not a setup failure. For sprint sessions, increase camber and toe-out to accelerate thermal buildup. For endurance, the conditioning model handles it over the first 8-10 laps.
-- **No brake migration:** The BMW lacks brake migration (unlike Cadillac, Porsche, Ferrari 499P). Brake bias at 46.0% is straightforward — no S3 2025 migration bugfix conversion needed. Pedal modulation is the only dynamic brake balance lever.
+- **Brake migration IS available (correction from earlier analysis).** The BMW shows `BrakeBiasMigration` in the setup — previously incorrectly documented as "no migration." All tested sessions ran migration at 0 (disabled). Migration is available as a tuning tool but has not been tested. BB at 46.0% has been stable across 7 sessions.
 
 ---
 
@@ -168,7 +187,7 @@ Note: BMW has relatively low damper click values compared to Ferrari. The scales
 ### Dampers (all in clicks — DIFFERENT SCALE from BMW)
 | Corner | LS Comp | HS Comp | HS Slope | LS Rbd | HS Rbd |
 |--------|---------|---------|----------|--------|--------|
-| Front | 15 | 15 | 5 | 25 | 6 |
+| Front | 15 | 15 | 8 | 25 | 6 |
 | Rear | 18 | 40 | 11 | 10 | 40 |
 
 **Note the massive difference from BMW:** Ferrari damper clicks are on a completely different scale. LF LS comp 15 on Ferrari ≠ 15 on BMW. Do not transfer damper values between cars.
@@ -176,12 +195,13 @@ Note: BMW has relatively low damper click values compared to Ferrari. The scales
 ### Brakes, Diff & TC
 | Parameter | Value |
 |-----------|-------|
-| Brake bias | 56.5% |
+| Brake bias | 53-54% (live adjusted) |
 | Brake pads | Medium |
 | Front master cyl | 17.8 mm |
 | Rear master cyl | 17.8 mm |
+| Brake migration | 1 (enabled, gain 0.0) |
 | Front diff preload | 0 Nm |
-| Rear diff preload | 0 Nm |
+| Rear diff preload | 15 Nm |
 | Rear diff clutch plates | 6 |
 | Rear diff coast/drive ramp | "Less Locking" |
 | TC1 (slip) | 7 |
@@ -201,13 +221,32 @@ Note: BMW has relatively low damper click values compared to Ferrari. The scales
 
 ### Ferrari-Specific Quirks
 - **Indexed parameter values:** Springs and ARBs use abstract indices (1, 2, A, B) not physical units. You cannot directly compare "Heave Spring 1" on the Ferrari to "30 N/mm" on the BMW. Treat each car's parameter space independently.
-- **Front diff preload exists:** Unlike the LMDh cars, the Ferrari has a front differential with adjustable preload. Both front and rear preload are at 0 Nm in this setup — the car runs essentially open diffs. This gives maximum rotation but minimum traction stability.
-- **Very high brake bias (56.5%):** 10+ percentage points higher than the BMW. The Ferrari's braking architecture distributes force differently. Do not compare bias numbers between cars — 56% on the Ferrari ≠ 56% on the BMW.
-- **Brake migration added S3 2025:** The Ferrari now has brake migration like the Cadillac and Porsche. This was part of the June 2025 brake migration bugfix patch.
-- **Aggressive front toe-out (-2.0mm):** Five times more toe-out than the BMW (-0.4mm). The Ferrari wants sharp turn-in. This will also heat the front tyres faster.
-- **Rear dampers are MUCH stiffer than front:** HS comp 40 rear vs 15 front, HS rbd 40 rear vs 6 front. This creates an extremely stiff rear platform for aero stability while letting the front move more for mechanical grip — opposite philosophy from making the rear compliant.
-- **Cornering mode (added S4 2025 Patch 3):** `HybridRearDriveCornerPct` allows adjusting front hybrid drive amount in high-speed corners. This is effectively a high-speed aero balance tuning tool **unique to the 499P** — no LMDh car has this. Higher values = more front-axle drive in fast corners = more high-speed stability/rotation adjustment.
+- **Front diff preload exists:** Unlike the LMDh cars, the Ferrari has a front differential with adjustable preload. Front preload remains at 0 Nm. Rear preload was raised from 0 to 15 Nm after S1 telemetry showed severe off-throttle understeer from fully open diffs.
+- **Brake bias 53-54% (revised from initial 55-56%):** Initial setup ran 55%+ which caused front lockups as aero diminished mid-braking zone. Reduced to 53-54% with live adjustment. The Ferrari's braking architecture distributes force differently from BMW — do not compare bias numbers between cars.
+- **Brake migration enabled, gain 0.0:** Migration system is ON but gain at zero = no dynamic migration active. Room to experiment with gain 0.5-1.0 for late-braking stability as aero drops approaching apexes.
+- **Aggressive front toe-out (-2.0mm):** Five times more toe-out than the BMW (-0.4mm). The Ferrari wants sharp turn-in. This also heats the front tyres faster.
+- **[VERIFIED S1-S2 2026] OFF-THROTTLE UNDERSTEER — MULTIPLE CONTRIBUTING FACTORS.** Telemetry shows the car needs 2× the steering input off-throttle vs on-power for the same lateral g. Understeer ratio: 14.4 deg/g on power → 28.0 deg/g off-throttle. Worst at T8-T9 (333 events, 77° steer for 1.3g at 80 kph) and T5-T6 (263 events at 115 kph) — both below 190 kph hybrid cutoff where aero is minimal.
+  - **⚠ DAMPER EFFECTS ARE SPEED-DEPENDENT.** At T8-T9 (80 kph) there is essentially no meaningful aero — the diffuser/rake argument is irrelevant. This is a pure mechanical weight transfer problem. At T15 (250 kph), aero dominates and ride height matters. **Different corners may require different reasoning for the same symptom.**
+  - **Contributing factors for LOW-SPEED off-throttle understeer (T8-T9, T5-T6):**
+    1. **Front LS Comp 15 is relatively stiff** — resists nose dive on throttle lift → weight transfers to front slowly → front doesn't load fast enough for turn-in. Fix: soften to 12-13 clicks to let the nose drop faster, getting weight onto the front tires sooner.
+    2. **Rear LS Rbd 10 could go either direction** — softer lets rear rise/unload faster = weight goes forward = promotes rotation. But also means rear grip disappears faster. At low speed where aero is irrelevant, softer rear rebound (7-8) helps the rear get out of the way for rotation. At high speed, the opposite may be true (rear rising kills diffuser).
+    3. **Front hybrid OFF below 190 kph** — worst understeer at 60-100 kph (ratio 59.8). Above 190 kph with hybrid, ratio drops to 14.5. The hybrid masks the mechanical understeer at speed.
+    4. **Diff clutch plates at 6** — acts as a locking force multiplier. Reducing to 4 weakens the overall diff locking at all ramp angles, letting the rear wheels differentiate speed more freely through corners. Less coast-side locking = less off-throttle understeer.
+    5. **BB at 53%** — still fairly front-biased. Dropping to 51-52% shifts braking torque rearward, helping the rear break traction under trail-braking and promoting entry rotation.
+  - **The 8mm rear RH rise off-throttle (34→43mm) is real** but its impact depends on speed. At 250 kph it matters (diffuser). At 80 kph where the worst understeer occurs, it's primarily a weight distribution indicator, not an aero problem.
+  - **Worst corners:** T8-T9 (333 events, 80 kph, 77° steering for 1.3g), T5-T6 (263 events, 115 kph). Both below hybrid cutoff, minimal aero, pure mechanical balance.
+- **Rear HS Rbd 40 = equal to HS Comp 40 — extreme value.** The rear resists extending after bumps as aggressively as compressing — causes suspension packing through rough sections. Consider reducing to 20-25 for better bump compliance. This is separate from the LS transition understeer.
+- **Front LS Rbd 25 — role is context-dependent.** At high speed, holds nose down and maintains rake (beneficial for aero). At low speed, holds inside front loaded during roll (may contribute to front sticking). The net effect depends on which corner phase dominates. Leave at 25 unless low-speed changes don't resolve the issue.
+- **RARB behavior differs fundamentally from BMW:**
+  - S1 (before diff preload): Constant 4-5, zero changes on best lap. The hybrid provided front grip electronically where the BMW needs RARB shifts.
+  - S2 (after diff preload + damper changes): Now live 1-5, avg 2.8, 7-11 changes/lap — adapted to BMW-like corner-by-corner management. The driver compensates for off-throttle understeer by running softer RARB in slow corners.
+- **Rear dampers are MUCH stiffer than front:** HS comp 40 rear vs 15 front, HS rbd 40 rear vs 6 front. This creates an extremely stiff rear platform for aero stability while letting the front move more for mechanical grip.
+- **Front HS slope was raised from 5 to 8 after S1.** Original slope 5 was too digressive — kerbs passed straight through with no chassis feedback. Slope 8 provides connected kerb feel while maintaining compliance. p99 shock velocities remain lower than BMW (167-180 vs 211-223) due to the torsion-bar suspension characteristics.
+- **Cornering mode (added S4 2025 Patch 3):** `HybridRearDriveCornerPct` set to 90% — adjusts front hybrid drive amount in high-speed corners. This is effectively a high-speed aero balance tuning tool **unique to the 499P** — no LMDh car has this.
 - **Front-axle hybrid deploys only above 190 km/h** (corrected in S4 2025 hybrid overhaul). Below 190 km/h the car is pure RWD. Above 190 km/h, up to 100 kW from the front MGU provides partial AWD — **genuine advantage in wet conditions**.
+- **Fuel consumption: 4.04 L/lap** — 22% higher than BMW's 3.32 L/lap. Range ~16 laps vs BMW ~22. This is the energy cost of the 200kW front hybrid system and is a significant race strategy factor.
+- **RF bottoming at 66.2% (T12 area):** 3 clean-track events at 270 kph in S1. Different bottoming location from BMW (which bottoms at 44-47% back straight). Ferrari's higher front ride height (18-20mm mean vs BMW 16-17mm) provides more general clearance but this specific bump gets through. Monitor — may need front HS comp increase if persistent.
+- **Ferrari back straight is dramatically more stable than BMW:** LR min 7.9mm vs BMW -2.7mm, rear σ 7.8 vs 10.1. The bespoke torsion-bar rear suspension handles Sebring's back straight surface transitions with significantly less oscillation.
 - **Vision tread tires + 10 kg weight reduction (S1 2026 Patch 2):** The Ferrari received the most comprehensive BoP update in Jan 2026: new tire properties, brake cooling recalibration, brake pedal force demands, rear suspension geometry adjustments, and a 10 kg weight reduction.
 - **Narrow optimal braking window:** The 499P is easy to lock fronts or rears. Aggressive overtaking under braking is risky. This is the car's primary weakness.
 
@@ -311,7 +350,7 @@ No verified setup file available from your data, but the Dallara architecture me
 | Track | Type | Key Setup Focus |
 |-------|------|----------------|
 | Daytona | Low DF, smooth, banking, long straights | Minimum wing, stiff heave/third springs for 31° banking compression loads (will bottom car if too soft), raise ride heights for banking, higher tyre pressures for sidewall loading, bus stop chicane is the key compromise — trail-brake for front grip the aero setup can't provide. Porsche 963 highest top speed here. |
-| Sebring | Bumpy, mixed speed, concrete/asphalt transitions | Compliant suspension (softer HS comp, lower HS comp slope for digressive damping), front RH at 30.0mm floor (all GTP cars) so bottoming primarily addressed via heave spring stiffness (≥65 N/mm on BMW) and HS comp damping — front pushrod/perch/torsion bar can be re-balanced while holding 30mm, increase rear ride heights via pushrod/perch offsets for bump clearance, expect elevated hot pressures (152 kPa min cold → 25-27 PSI hot), track temp ~39°C typical. BMW's mechanical grip advantage makes it competitive here. |
+| Sebring | Bumpy, mixed speed, concrete/asphalt transitions | Compliant suspension (softer HS comp slope for digressive damping). Front heave 50 N/mm is adequate on clean track for BMW — the bumps that cause bottoming are mostly kerb strikes (T4, T11, T15) which are driving choices, not setup failures. **The real platform issue is the back straight (44-47% of lap): rear bottoming at 250 kph with σ=9.9mm. Fix via rear HS comp damping/slope, not heave spring.** Front RH at 30.0mm floor (all GTP cars). Expect elevated hot pressures (152 kPa min cold → 25-27 PSI hot). BMW excels here on mechanical grip. |
 | COTA | High-speed + technical, heavy kerbs | Medium-high wing, S1 esses need firm heave springs for rapid direction changes under aero load, but elevation changes elsewhere create dynamic DF variations at crests that punish over-stiff setups. Moderate heave + firm rear third spring. Stiffen HS comp for kerbs. |
 | Watkins Glen | Medium-high DF, elevation, bumpy | High wing, **softer front heave springs** (officially documented as requiring softer settings like Sebring), lower HS comp slope for bump absorption, Boot section elevation changes reward proper heave/third spring tuning, focus on mid-speed balance, camber important |
 | Road Atlanta | Fast sweepers + hard braking | Aero platform critical through esses, strong braking setup |
