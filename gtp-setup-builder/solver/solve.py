@@ -6,6 +6,7 @@ Usage:
     python -m solver.solve --car bmw --track sebring --wing 17 --fuel 12
     python -m solver.solve --car bmw --track sebring --wing 17 --json
     python -m solver.solve --car bmw --track sebring --wing 17 --save output/bmw_sebring.json
+    python -m solver.solve --car bmw --track sebring --wing 17 --sto output/bmw_sebring.sto
 """
 
 from __future__ import annotations
@@ -25,25 +26,39 @@ from solver.arb_solver import ARBSolver
 from solver.wheel_geometry_solver import WheelGeometrySolver
 from solver.damper_solver import DamperSolver
 from output.report import print_full_setup_report, save_json_summary
+from output.setup_writer import write_sto
 
 TRACKS_DIR = Path(__file__).parent.parent / "data" / "tracks"
 
 
 def find_track_profile(track_name: str) -> TrackProfile:
-    """Find and load a track profile by partial name match."""
+    """Find and load a track profile by partial name match.
+
+    When multiple files match, prefers:
+    1. Files ending in '_latest' (most recently generated profile)
+    2. Among remaining matches, the most recently modified file
+    """
     track_files = list(TRACKS_DIR.glob("*.json"))
     if not track_files:
         raise FileNotFoundError(f"No track profiles in {TRACKS_DIR}")
 
-    # Exact match first
-    for f in track_files:
-        if track_name.lower() in f.stem.lower():
-            return TrackProfile.load(f)
+    # Collect all matching files
+    matches = [f for f in track_files if track_name.lower() in f.stem.lower()]
 
-    available = [f.stem for f in track_files]
-    raise FileNotFoundError(
-        f"No track profile matching '{track_name}'. Available: {available}"
-    )
+    if not matches:
+        available = [f.stem for f in track_files]
+        raise FileNotFoundError(
+            f"No track profile matching '{track_name}'. Available: {available}"
+        )
+
+    # Prefer '_latest' suffix, then most recently modified
+    latest = [f for f in matches if f.stem.endswith("_latest")]
+    if latest:
+        return TrackProfile.load(latest[0])
+
+    # Fall back to most recently modified
+    matches.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+    return TrackProfile.load(matches[0])
 
 
 def main():
@@ -65,6 +80,8 @@ def main():
                         help="Output as JSON instead of human-readable")
     parser.add_argument("--save", type=str, default=None,
                         help="Save full JSON summary to file")
+    parser.add_argument("--sto", type=str, default=None,
+                        help="Export iRacing .sto setup file")
     parser.add_argument("--report-only", action="store_true",
                         help="Print only the garage setup sheet (skip per-step details)")
 
@@ -210,6 +227,18 @@ def main():
             output_path=args.save,
         )
         print(f"\nJSON summary saved to: {args.save}")
+
+    if args.sto:
+        sto_path = write_sto(
+            car_name=car.name,
+            track_name=f"{track.track_name} — {track.track_config}",
+            wing=args.wing,
+            fuel_l=args.fuel,
+            step1=step1, step2=step2, step3=step3,
+            step4=step4, step5=step5, step6=step6,
+            output_path=args.sto,
+        )
+        print(f"\niRacing .sto setup saved to: {sto_path}")
 
     if args.json:
         import dataclasses

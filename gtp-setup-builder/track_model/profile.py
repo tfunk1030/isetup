@@ -93,6 +93,30 @@ class TrackProfile:
     elevation_profile: list[dict] = field(default_factory=list)
     elevation_change_m: float = 0.0
 
+    # Lateral G distribution (extracted from IBT)
+    lateral_g: dict[str, float] = field(default_factory=dict)
+    # e.g. {"mean_abs": 0.94, "p90": 1.83, "p95": 2.02, "p99": 2.43, "max": 4.53}
+
+    # Body roll distribution (from IMU Roll channel, degrees)
+    body_roll_deg: dict[str, float] = field(default_factory=dict)
+    # e.g. {"mean_abs": 0.72, "p95": 1.67, "max": 3.88}
+
+    # Ride height statistics (mm)
+    ride_heights_mm: dict[str, dict] = field(default_factory=dict)
+
+    # Roll gradient: measured body roll per g of lateral acceleration (deg/g)
+    # Derived from linear fit of |Roll| vs |LatAccel| at 1-2g cornering range
+    roll_gradient_deg_per_g: float = 0.0
+
+    # Measured LLTD from ride height deflection ratio in corners
+    lltd_measured: float = 0.0
+
+    # Surface profile (detailed shock velocity breakdown)
+    surface_profile: dict = field(default_factory=dict)
+
+    # Telemetry source description
+    telemetry_source: str = ""
+
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
         d = asdict(self)
@@ -110,13 +134,21 @@ class TrackProfile:
 
     @staticmethod
     def load(path: str | Path) -> "TrackProfile":
-        """Load profile from JSON."""
+        """Load profile from JSON.
+
+        Gracefully handles unknown fields in the JSON (ignores them if
+        they don't match a dataclass field, preserving forward compatibility).
+        """
         data = json.loads(Path(path).read_text())
         # Reconstruct nested dataclasses
-        data["braking_zones"] = [BrakingZone(**bz) for bz in data["braking_zones"]]
-        data["corners"] = [Corner(**c) for c in data["corners"]]
-        data["kerb_events"] = [KerbEvent(**k) for k in data["kerb_events"]]
-        return TrackProfile(**data)
+        data["braking_zones"] = [BrakingZone(**bz) for bz in data.get("braking_zones", [])]
+        data["corners"] = [Corner(**c) for c in data.get("corners", [])]
+        data["kerb_events"] = [KerbEvent(**k) for k in data.get("kerb_events", [])]
+        # Filter to only known fields to handle forward/backward compatibility
+        import dataclasses
+        known_fields = {f.name for f in dataclasses.fields(TrackProfile)}
+        filtered = {k: v for k, v in data.items() if k in known_fields}
+        return TrackProfile(**filtered)
 
     def summary(self) -> str:
         """Human-readable summary."""

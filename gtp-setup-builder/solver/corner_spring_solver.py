@@ -74,6 +74,11 @@ class CornerSpringSolution:
     total_front_heave_nmm: float
     total_rear_heave_nmm: float
 
+    # Heave-mode natural frequencies (heave + 2*corner, full axle mass)
+    # THIS is what the FFT measures on straights — both wheels moving together
+    front_heave_mode_freq_hz: float
+    rear_heave_mode_freq_hz: float
+
     # Track surface matching
     track_bump_freq_hz: float
     front_freq_isolation_ratio: float  # bump_freq / corner_freq
@@ -250,6 +255,19 @@ class CornerSpringSolver:
         front_isolation = bump_freq / front_freq if front_freq > 0 else 0
         rear_isolation = bump_freq / rear_freq if rear_freq > 0 else 0
 
+        # Heave-mode natural frequencies (what FFT measures on straights)
+        # Heave mode: both wheels move together, full axle sprung mass
+        # k_total = heave_spring + 2 * corner_wheel_rate (all in N/mm)
+        # Rear corner wheel rate = spring_rate * MR^2
+        rear_wheel_rate = rear_rate * csm.rear_motion_ratio ** 2
+        k_heave_front = front_heave_nmm + 2 * front_rate  # front MR=1.0
+        k_heave_rear = rear_third_nmm + 2 * rear_wheel_rate
+        # Sprung mass per axle (subtract ~50 kg/corner unsprung)
+        m_sprung_front = max(m_f_corner * 2 - 100, 200)  # kg
+        m_sprung_rear = max(m_r_corner * 2 - 100, 200)
+        front_heave_freq = self.natural_freq(k_heave_front / 2, m_sprung_front / 2)
+        rear_heave_freq = self.natural_freq(k_heave_rear / 2, m_sprung_rear / 2)
+
         # === Constraint checks ===
         constraints = self._check_constraints(
             front_rate=front_rate,
@@ -273,6 +291,8 @@ class CornerSpringSolver:
             rear_natural_freq_hz=round(rear_freq, 2),
             rear_third_corner_ratio=round(rear_third_ratio, 1),
             rear_mass_per_corner_kg=round(m_r_corner, 0),
+            front_heave_mode_freq_hz=round(front_heave_freq, 2),
+            rear_heave_mode_freq_hz=round(rear_heave_freq, 2),
             total_front_heave_nmm=round(total_front_heave, 0),
             total_rear_heave_nmm=round(total_rear_heave, 0),
             track_bump_freq_hz=bump_freq,

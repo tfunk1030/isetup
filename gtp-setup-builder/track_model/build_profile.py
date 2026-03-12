@@ -109,6 +109,123 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         elev_profile = _build_elevation_profile(alt, lap_dist, track_length_m)
         elev_change = float(np.max(alt) - np.min(alt))
 
+    # === Lateral G distribution (session-wide, on-track only) ===
+    abs_lat_g_ot = np.abs(all_lat_g[ot_mask])
+    lateral_g_dist = {
+        "mean_abs": round(float(np.mean(abs_lat_g_ot)), 2),
+        "p90": round(float(np.percentile(abs_lat_g_ot, 90)), 2),
+        "p95": round(float(np.percentile(abs_lat_g_ot, 95)), 2),
+        "p99": round(float(np.percentile(abs_lat_g_ot, 99)), 2),
+        "max": round(float(np.max(abs_lat_g_ot)), 2),
+    }
+
+    # === Body roll distribution ===
+    body_roll_dist: dict[str, float] = {}
+    roll_gradient = 0.0
+
+    if ibt.has_channel("Roll"):
+        all_roll = ibt.channel("Roll")[ot_mask]  # radians in iRacing
+        all_roll_deg = np.degrees(all_roll)
+        abs_roll = np.abs(all_roll_deg)
+        body_roll_dist = {
+            "mean_abs": round(float(np.mean(abs_roll)), 2),
+            "p95": round(float(np.percentile(abs_roll, 95)), 2),
+            "max": round(float(np.max(abs_roll)), 2),
+        }
+
+        # Roll gradient: derived from body roll statistics and lateral G
+        # Direct linear fit of |roll| vs |lat_g| is unreliable because:
+        # 1. Roll channel sign convention varies
+        # 2. Aero roll resistance is speed-dependent (non-linear)
+        # 3. Combined lateral+longitudinal events muddy the correlation
+        #
+        # Instead: use the p95 ratio as a robust estimator.
+        # At p95 cornering (~2g), the car exhibits p95 roll (~1.6°).
+        # This gives roll_gradient ≈ p95_roll / p95_lat_g.
+        p95_lat = float(np.percentile(abs_lat_g_ot, 95))
+        if p95_lat > 0.5 and float(np.percentile(abs_roll, 95)) > 0.1:
+            roll_gradient = round(
+                float(np.percentile(abs_roll, 95)) / p95_lat, 3
+            )
+    else:
+        # Derive roll from ride height differential (LF-RF, LR-RR)
+        if (ibt.has_channel("LFrideHeight") and ibt.has_channel("RFrideHeight")):
+            lf_rh = ibt.channel("LFrideHeight")[ot_mask]
+            rf_rh = ibt.channel("RFrideHeight")[ot_mask]
+            # Roll angle ≈ atan((LF-RF) / track_width)
+            # iRacing ride heights are in meters
+            track_w_m = 1.6  # approximate front track width
+            roll_from_rh = np.degrees(np.arctan((lf_rh - rf_rh) / track_w_m))
+            abs_roll_rh = np.abs(roll_from_rh)
+            body_roll_dist = {
+                "mean_abs": round(float(np.mean(abs_roll_rh)), 2),
+                "p95": round(float(np.percentile(abs_roll_rh, 95)), 2),
+                "max": round(float(np.max(abs_roll_rh)), 2),
+            }
+            p95_lat = float(np.percentile(abs_lat_g_ot, 95))
+            if p95_lat > 0.5 and float(np.percentile(abs_roll_rh, 95)) > 0.1:
+                roll_gradient = round(
+                    float(np.percentile(abs_roll_rh, 95)) / p95_lat, 3
+                )
+
+    # === Ride height statistics ===
+    ride_heights: dict[str, dict] = {}
+    for ch_name, label in [
+        ("LFrideHeight", "LF"), ("RFrideHeight", "RF"),
+        ("LRrideHeight", "LR"), ("RRrideHeight", "RR"),
+    ]:
+        if ibt.has_channel(ch_name):
+            rh = ibt.channel(ch_name)[ot_mask] * 1000  # m → mm
+            ride_heights[label] = {
+                "mean_mm": round(float(np.mean(rh)), 1),
+                "min_mm": round(float(np.min(rh)), 1),
+                "max_mm": round(float(np.max(rh)), 1),
+                "p05_mm": round(float(np.percentile(rh, 5)), 1),
+                "p95_mm": round(float(np.percentile(rh, 95)), 1),
+                "std_mm": round(float(np.std(rh)), 1),
+            }
+
+    # === LLTD from ride height deflections in corners ===
+    lltd_measured = 0.0
+    if all(ibt.has_channel(c) for c in
+           ["LFrideHeight", "RFrideHeight", "LRrideHeight", "RRrideHeight"]):
+        lf_rh_ot = ibt.channel("LFrideHeight")[ot_mask] * 1000
+        rf_rh_ot = ibt.channel("RFrideHeight")[ot_mask] * 1000
+        lr_rh_ot = ibt.channel("LRrideHeight")[ot_mask] * 1000
+        rr_rh_ot = ibt.channel("RRrideHeight")[ot_mask] * 1000
+
+        # In corners (|lat_g| > 1.0), compute front vs rear deflection
+        # Deflection = |left - right| ride height difference (proportional to
+        # roll stiffness contribution from that axle)
+        corner_mask = abs_lat_g_ot > 1.0
+        if np.sum(corner_mask) > 100:
+            front_deflection = np.abs(lf_rh_ot[corner_mask] - rf_rh_ot[corner_mask])
+            rear_deflection = np.abs(lr_rh_ot[corner_mask] - rr_rh_ot[corner_mask])
+            mean_front = float(np.mean(front_deflection))
+            mean_rear = float(np.mean(rear_deflection))
+            total = mean_front + mean_rear
+            if total > 0.1:
+                lltd_measured = round(mean_front / total, 3)
+
+    # === Surface profile (detailed breakdown) ===
+    surface_profile_data = {
+        "front_p50_mmps": round(float(np.percentile(front_sv * 1000, 50)), 1),
+        "front_p95_mmps": round(float(np.percentile(front_sv * 1000, 95)), 1),
+        "front_p99_mmps": round(float(np.percentile(front_sv * 1000, 99)), 1),
+        "rear_p50_mmps": round(float(np.percentile(rear_sv * 1000, 50)), 1),
+        "rear_p95_mmps": round(float(np.percentile(rear_sv * 1000, 95)), 1),
+        "rear_p99_mmps": round(float(np.percentile(rear_sv * 1000, 99)), 1),
+        "front_p99_p95_ratio": round(float(
+            np.percentile(front_sv, 99) / max(np.percentile(front_sv, 95), 1e-6)
+        ), 2),
+        "rear_p99_p95_ratio": round(float(
+            np.percentile(rear_sv, 99) / max(np.percentile(rear_sv, 95), 1e-6)
+        ), 2),
+    }
+
+    # === Telemetry source ===
+    telemetry_src = f"{Path(ibt_path).name} — best lap {best_lap_time:.3f}s"
+
     profile = TrackProfile(
         track_name=track.get("track_name", "Unknown"),
         track_config=track.get("track_config", ""),
@@ -137,6 +254,13 @@ def build_profile(ibt_path: str | Path) -> TrackProfile:
         kerb_events=kerb_events,
         elevation_profile=elev_profile,
         elevation_change_m=round(elev_change, 1),
+        lateral_g=lateral_g_dist,
+        body_roll_deg=body_roll_dist,
+        ride_heights_mm=ride_heights,
+        roll_gradient_deg_per_g=roll_gradient,
+        lltd_measured=lltd_measured,
+        surface_profile=surface_profile_data,
+        telemetry_source=telemetry_src,
     )
     return profile
 

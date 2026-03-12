@@ -63,7 +63,7 @@ def print_full_setup_report(
         f"  Target DF balance:  {target_balance:.2f}%",
         "=" * width,
         "",
-        "  ⚠  IMPORTANT: These are physics-derived STARTING POINTS.",
+        "  !!  IMPORTANT: These are physics-derived STARTING POINTS.",
         "  Validate with a 5-lap IBT session before committing.",
         "  Follow the 6-step workflow — do not adjust dampers (Step 6)",
         "  until Steps 1-5 are validated on track.",
@@ -82,8 +82,8 @@ def print_full_setup_report(
         "  HEAVE / THIRD SPRINGS",
         f"    Front heave:    {step2.front_heave_nmm:6.1f} N/mm",
         f"    Rear third:     {step2.rear_third_nmm:6.1f} N/mm",
-        f"    Front perch:    {step2.perch_offset_front_mm:6.1f} mm",
-        f"    Rear perch:     {step2.perch_offset_rear_mm:6.1f} mm",
+        f"    Front perch:    {step2.perch_offset_front_mm:6.0f} mm",
+        f"    Rear perch:     {step2.perch_offset_rear_mm:6.0f} mm",
         "",
         "  CORNER SPRINGS",
         f"    Front torsion bar OD:  {step3.front_torsion_od_mm:.2f} mm",
@@ -95,7 +95,7 @@ def print_full_setup_report(
         f"    Front ARB blade:  {step4.front_arb_blade_start}  (keep locked here)",
         f"    Rear ARB size:    {step4.rear_arb_size}",
         f"    Rear ARB blade:   {step4.rear_arb_blade_start}  (starting point — adjust live)",
-        f"    Live RARB range:  blade {step4.rarb_blade_slow_corner} (slow) → "
+        f"    Live RARB range:  blade {step4.rarb_blade_slow_corner} (slow) -> "
         f"blade {step4.rarb_blade_fast_corner} (fast)",
         "",
         "  WHEEL GEOMETRY",
@@ -130,8 +130,8 @@ def print_full_setup_report(
         f"  LLTD (target):      {step4.lltd_target:.1%}",
         f"  Static front wt:    {step4.static_front_weight_dist:.1%}",
         f"  RARB sensitivity:   {step4.rarb_sensitivity_per_blade:+.1%} LLTD per blade",
-        f"  LLTD range (RARB 1→{step4.rarb_blade_fast_corner}):  "
-        f"{step4.lltd_at_rarb_min:.1%} → {step4.lltd_at_rarb_max:.1%}",
+        f"  LLTD range (RARB 1->{step4.rarb_blade_fast_corner}):  "
+        f"{step4.lltd_at_rarb_min:.1%} -> {step4.lltd_at_rarb_max:.1%}",
         "",
         section("THERMAL PREDICTION"),
         "",
@@ -151,6 +151,11 @@ def print_full_setup_report(
         f"(freq: {step3.front_natural_freq_hz:.2f} Hz, heave/corner: {step3.front_heave_corner_ratio:.1f}x)",
         f"  Rear coil spring:   {step3.rear_spring_rate_nmm:.0f} N/mm  "
         f"(freq: {step3.rear_natural_freq_hz:.2f} Hz, third/corner: {step3.rear_third_corner_ratio:.1f}x)",
+        "",
+        "",
+        "  GARAGE LIMITS",
+        "  Heave slider deflection max: 45.0 mm  (check in garage after loading)",
+        "  Heave/third perch offsets: integer increments only",
         "",
         section("VALIDATION CHECKLIST"),
         "",

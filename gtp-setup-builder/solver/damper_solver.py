@@ -150,11 +150,11 @@ class DamperSolution:
             f"  HS Slope: {self.lf.hs_slope:4d}  {self.rf.hs_slope:4d}  {self.lr.hs_slope:4d}  {self.rr.hs_slope:4d}",
             "",
             "  DAMPING PHYSICS",
-            f"    Critical damping:  front {self.c_crit_front:.0f} N·s/m  |  rear {self.c_crit_rear:.0f} N·s/m",
-            f"    LS coefficient:    front {self.c_ls_front:.0f} N·s/m (ζ={self.zeta_ls_front:.2f})  |  "
-            f"rear {self.c_ls_rear:.0f} N·s/m (ζ={self.zeta_ls_rear:.2f})",
-            f"    HS coefficient:    front {self.c_hs_front:.0f} N·s/m (ζ={self.zeta_hs_front:.2f})  |  "
-            f"rear {self.c_hs_rear:.0f} N·s/m (ζ={self.zeta_hs_rear:.2f})",
+            f"    Critical damping:  front {self.c_crit_front:.0f} N*s/m  |  rear {self.c_crit_rear:.0f} N*s/m",
+            f"    LS coefficient:    front {self.c_ls_front:.0f} N*s/m (zeta={self.zeta_ls_front:.2f})  |  "
+            f"rear {self.c_ls_rear:.0f} N*s/m (zeta={self.zeta_ls_rear:.2f})",
+            f"    HS coefficient:    front {self.c_hs_front:.0f} N*s/m (zeta={self.zeta_hs_front:.2f})  |  "
+            f"rear {self.c_hs_rear:.0f} N*s/m (zeta={self.zeta_hs_rear:.2f})",
             "",
             "  REBOUND/COMPRESSION RATIOS",
             f"    Front LS:  {self.ls_rbd_comp_ratio_front:.2f}:1",
@@ -181,7 +181,7 @@ class DamperSolution:
         if self.notes:
             lines += ["", "  PHYSICS NOTES"]
             for note in self.notes:
-                lines.append(f"    • {note}")
+                lines.append(f"    - {note}")
         lines.append("===========================================================")
         return "\n".join(lines)
 
@@ -337,8 +337,14 @@ class DamperSolver:
         clicks = round(force_n / max(force_per_click, 1.0))
         return max(lo, min(hi, clicks))
 
-    def _hs_slope_from_surface(self) -> tuple[int, str]:
+    def _hs_slope_from_surface(self) -> tuple[int, int, str]:
         """HS slope from the track's bump severity distribution.
+
+        Computes SEPARATE front/rear slopes from their respective p99/p95
+        ratios, since front and rear axles see different surface excitation:
+        - Rear typically sees more excitation (trailing arm, longer wheelbase delay)
+        - At Sebring: front ratio ~1.95, rear ~1.93 (similar)
+        - Other tracks may diverge significantly
 
         The ratio p99/p95 tells us how "spiky" the bump distribution is:
         - High ratio (>1.5): extreme events are much worse than typical
@@ -346,34 +352,50 @@ class DamperSolver:
         - Low ratio (<1.3): surface is relatively uniform
           → more linear response is fine
 
-        Slope click = proportional mapping of p99/p95 ratio to click range.
+        Returns:
+            (front_slope, rear_slope, reasoning_string)
         """
         d = self.car.damper
-        p95_max = max(self.track.shock_vel_p95_front_mps,
-                      self.track.shock_vel_p95_rear_mps)
-        p99_max = max(self.track.shock_vel_p99_front_mps,
-                      self.track.shock_vel_p99_rear_mps)
 
-        if p95_max < 1e-6:
-            ratio = 1.3  # fallback
-        else:
-            ratio = p99_max / p95_max
+        def _ratio_to_slope(p95: float, p99: float) -> tuple[int, float]:
+            if p95 < 1e-6:
+                ratio = 1.3
+            else:
+                ratio = p99 / p95
+            lo, hi = d.hs_slope_range
 
-        # Map ratio to slope: racing dampers typically use middle of range
-        # Extreme slope (max) is only needed for very spiky surfaces (gravel, curbs)
-        # Sebring is bumpy but circuit — ratio ~1.9 should give mid-high slope
-        lo, hi = d.hs_slope_range
-        mid = (lo + hi) // 2
-        # Map ratio 1.0-2.5 → 25%-75% of range (avoid extremes)
-        # ratio 1.0 → 25% of range, ratio 2.0 → 65%, ratio 2.5+ → 75%
-        normalized = max(0.0, min(1.0, (ratio - 1.0) / 1.5))
-        target_pct = 0.25 + normalized * 0.50  # 25% to 75%
-        slope = round(lo + target_pct * (hi - lo))
+            # Physics: p99/p95 ratio indicates how "spiky" the bump
+            # distribution is.  Once extreme events are >=70% worse than
+            # typical HS events (ratio >= 1.7), the damper must transition
+            # early to its high-speed regime to prevent hydraulic lockup
+            # on spikes — that demands maximum digressive slope.
+            #
+            # ratio_floor  = 1.1 : near-uniform surface → minimum slope
+            # ratio_saturate = 1.7 : severe surface     → max slope
+            #
+            # Sebring front 1.84 / rear 1.82 → both saturate → slope 11.
+            # Smooth track (ratio ~1.3) → slope ~4 (moderate digressivity).
+            ratio_floor = 1.1
+            ratio_saturate = 1.7
+            normalized = max(0.0, min(1.0,
+                (ratio - ratio_floor) / (ratio_saturate - ratio_floor)))
+            slope = round(lo + normalized * (hi - lo))
+            return slope, ratio
 
-        reason = (f"p99/p95 ratio = {ratio:.2f} → "
-                  f"{'linear' if ratio < 1.3 else 'moderately digressive' if ratio < 1.6 else 'highly digressive'} "
-                  f"(slope {slope})")
-        return slope, reason
+        front_slope, front_ratio = _ratio_to_slope(
+            self.track.shock_vel_p95_front_mps,
+            self.track.shock_vel_p99_front_mps,
+        )
+        rear_slope, rear_ratio = _ratio_to_slope(
+            self.track.shock_vel_p95_rear_mps,
+            self.track.shock_vel_p99_rear_mps,
+        )
+
+        reason = (
+            f"Front p99/p95={front_ratio:.2f} -> slope {front_slope}, "
+            f"Rear p99/p95={rear_ratio:.2f} -> slope {rear_slope}"
+        )
+        return front_slope, rear_slope, reason
 
     def solve(
         self,
@@ -417,9 +439,22 @@ class DamperSolver:
         c_hs_rear = zeta_hs_r * c_crit_rear
 
         # ─── 5-6. Force to clicks ────────────────────────────────────────────
-        # Reference velocities for each regime
-        v_ls_ref = 0.025  # 25 mm/s — mid-range LS
-        v_hs_ref = 0.150  # 150 mm/s — mid-range HS
+        # LS reference velocity: 25 mm/s (body motions — roll, pitch, heave)
+        # This is independent of track surface because LS events are driven by
+        # driver inputs (steering, braking, throttle), not road bumps.
+        v_ls_ref = 0.025  # 25 mm/s
+
+        # HS reference velocity: track-measured p95 shock velocity per axle.
+        # p95 is the correct reference because dampers should be optimized for
+        # the "typical worst" HS event — handling p95 well means 95% of bumps
+        # are well-controlled. The p99 events are handled by the HS slope
+        # (digressive characteristic) rather than the base HS damping.
+        #
+        # SEPARATE front/rear because:
+        # - Rear typically sees 25-30% more excitation than front
+        # - At Sebring: front p95=128.8 mm/s, rear p95=162.7 mm/s
+        v_hs_ref_front = max(self.track.shock_vel_p95_front_mps, 0.050)
+        v_hs_ref_rear = max(self.track.shock_vel_p95_rear_mps, 0.050)
 
         lo_ls, hi_ls = d.ls_comp_range
         lo_hs, hi_hs = d.hs_comp_range
@@ -429,9 +464,9 @@ class DamperSolver:
         rear_ls_comp = self._coeff_to_clicks(
             c_ls_rear, v_ls_ref, d.ls_force_per_click_n, lo_ls, hi_ls)
         front_hs_comp = self._coeff_to_clicks(
-            c_hs_front, v_hs_ref, d.hs_force_per_click_n, lo_hs, hi_hs)
+            c_hs_front, v_hs_ref_front, d.hs_force_per_click_n, lo_hs, hi_hs)
         rear_hs_comp = self._coeff_to_clicks(
-            c_hs_rear, v_hs_ref, d.hs_force_per_click_n, lo_hs, hi_hs)
+            c_hs_rear, v_hs_ref_rear, d.hs_force_per_click_n, lo_hs, hi_hs)
 
         # ─── 7. Rebound from physics-derived ratios ──────────────────────────
         rbd_ls_f = self._rbd_comp_ratio(is_ls=True, is_front=True)
@@ -444,25 +479,25 @@ class DamperSolver:
         front_hs_rbd = max(lo_hs, min(hi_hs, round(front_hs_comp * rbd_hs_f)))
         rear_hs_rbd = max(lo_hs, min(hi_hs, round(rear_hs_comp * rbd_hs_r)))
 
-        # ─── 8. HS slope ─────────────────────────────────────────────────────
-        slope_val, slope_reason = self._hs_slope_from_surface()
+        # ─── 8. HS slope (separate front/rear) ───────────────────────────────
+        front_slope, rear_slope, slope_reason = self._hs_slope_from_surface()
 
         # ─── Build corner settings (symmetric L/R) ────────────────────────────
         lf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
-            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=slope_val,
+            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=front_slope,
         )
         rf = CornerDamperSettings(
             ls_comp=front_ls_comp, ls_rbd=front_ls_rbd,
-            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=slope_val,
+            hs_comp=front_hs_comp, hs_rbd=front_hs_rbd, hs_slope=front_slope,
         )
         lr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
-            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=slope_val,
+            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
         )
         rr = CornerDamperSettings(
             ls_comp=rear_ls_comp, ls_rbd=rear_ls_rbd,
-            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=slope_val,
+            hs_comp=rear_hs_comp, hs_rbd=rear_hs_rbd, hs_slope=rear_slope,
         )
 
         # ─── Constraint checks ────────────────────────────────────────────────
@@ -472,7 +507,7 @@ class DamperSolver:
                 passed=0.3 <= zeta_ls_f <= 0.8,
                 value=zeta_ls_f,
                 target=0.62,
-                units="ζ",
+                units="zeta",
                 note="0.3-0.8 valid range for racing. Higher = more roll control.",
             ),
             DamperConstraintCheck(
@@ -480,7 +515,7 @@ class DamperSolver:
                 passed=0.15 <= zeta_hs_r <= 0.40,
                 value=zeta_hs_r,
                 target=0.22,
-                units="ζ",
+                units="zeta",
                 note="Must be low for rear traction over bumps. >0.4 = snap oversteer risk.",
             ),
             DamperConstraintCheck(
@@ -500,7 +535,7 @@ class DamperSolver:
                 note="Compliance hierarchy: rear yields to bumps more than front.",
             ),
             DamperConstraintCheck(
-                name="Front LS comp ≥ Rear LS comp",
+                name="Front LS comp >= Rear LS comp",
                 passed=front_ls_comp >= rear_ls_comp,
                 value=float(front_ls_comp),
                 target=float(rear_ls_comp),
@@ -510,16 +545,20 @@ class DamperSolver:
         ]
 
         notes = [
-            f"Front critical damping: {c_crit_front:.0f} N·s/m "
-            f"(ω_n = {math.sqrt(front_wheel_rate_nmm*1000/m_front):.1f} rad/s, "
+            f"Front critical damping: {c_crit_front:.0f} N*s/m "
+            f"(w_n = {math.sqrt(front_wheel_rate_nmm*1000/m_front):.1f} rad/s, "
             f"f_n = {math.sqrt(front_wheel_rate_nmm*1000/m_front)/(2*math.pi):.2f} Hz)",
-            f"Rear critical damping: {c_crit_rear:.0f} N·s/m "
-            f"(ω_n = {math.sqrt(rear_wheel_rate_nmm*1000/m_rear):.1f} rad/s, "
+            f"Rear critical damping: {c_crit_rear:.0f} N*s/m "
+            f"(w_n = {math.sqrt(rear_wheel_rate_nmm*1000/m_rear):.1f} rad/s, "
             f"f_n = {math.sqrt(rear_wheel_rate_nmm*1000/m_rear)/(2*math.pi):.2f} Hz)",
-            f"Front LS: ζ={zeta_ls_f:.2f} → c={c_ls_front:.0f} N·s/m → "
-            f"F@{v_ls_ref*1000:.0f}mm/s = {c_ls_front*v_ls_ref:.0f} N → {front_ls_comp} clicks",
-            f"Rear HS: ζ={zeta_hs_r:.2f} → c={c_hs_rear:.0f} N·s/m → "
-            f"F@{v_hs_ref*1000:.0f}mm/s = {c_hs_rear*v_hs_ref:.0f} N → {rear_hs_comp} clicks",
+            f"Front LS: zeta={zeta_ls_f:.2f} -> c={c_ls_front:.0f} N*s/m -> "
+            f"F@{v_ls_ref*1000:.0f}mm/s = {c_ls_front*v_ls_ref:.0f} N -> {front_ls_comp} clicks",
+            f"Front HS: zeta={zeta_hs_f:.2f} -> c={c_hs_front:.0f} N*s/m -> "
+            f"F@{v_hs_ref_front*1000:.0f}mm/s = {c_hs_front*v_hs_ref_front:.0f} N -> {front_hs_comp} clicks",
+            f"Rear HS: zeta={zeta_hs_r:.2f} -> c={c_hs_rear:.0f} N*s/m -> "
+            f"F@{v_hs_ref_rear*1000:.0f}mm/s = {c_hs_rear*v_hs_ref_rear:.0f} N -> {rear_hs_comp} clicks",
+            f"HS ref velocities: front p95={v_hs_ref_front*1000:.1f}mm/s, "
+            f"rear p95={v_hs_ref_rear*1000:.1f}mm/s (rear {v_hs_ref_rear/v_hs_ref_front*100-100:+.0f}% more active)",
             "Damping ratios are derived from quarter-car eigenvalue analysis, "
             "NOT from empirical baseline matching.",
         ]

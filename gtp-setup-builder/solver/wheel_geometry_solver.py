@@ -149,7 +149,7 @@ class WheelGeometrySolution:
         if self.notes:
             lines += ["", "  NOTES"]
             for note in self.notes:
-                lines.append(f"    • {note}")
+                lines.append(f"    - {note}")
         lines.append("===========================================================")
         return "\n".join(lines)
 
@@ -187,70 +187,33 @@ class WheelGeometrySolver:
 
     def _optimal_camber(
         self,
-        roll_deg: float,
+        representative_roll_deg: float,
         roll_gain: float,
         baseline_deg: float,
     ) -> float:
         """Compute optimal static camber from roll kinematics.
 
-        We want dynamic camber at peak g ≈ 0°:
-            0 = static_camber + roll_deg * roll_gain
-            static_camber = -(roll_deg * roll_gain)
+        We want dynamic camber ≈ 0° at the REPRESENTATIVE cornering load,
+        which is the track's measured p95 lateral G. This is the load level
+        the driver is at or below for 95% of cornering time — mid-corner,
+        transitions, trail-braking.
 
-        Clamp to the car's valid camber range. If the theoretical optimal
-        deviates <0.3° from the calibrated baseline, use the baseline.
+        At peak g (>p95), dynamic camber goes slightly positive — acceptable
+        because the tyre inner shoulder is still loaded and the wider contact
+        patch at maximum load is beneficial.
+
+        Args:
+            representative_roll_deg: Body roll at representative (p95) lateral G
+            roll_gain: Camber change per degree of roll (deg/deg)
+            baseline_deg: Calibrated baseline camber for comparison
         """
         geo = self.car.geometry
-        # Dynamic camber at peak g = 0° gives the MINIMUM required static
-        # camber. But tyres need to be loaded across the FULL cornering
-        # envelope (0.5g to peak g), not just at peak.
-        #
-        # At partial cornering (e.g., 60% of peak g), body roll is 60% of
-        # peak roll, so the camber compensation is only 60%. If we set
-        # static camber for 0° dynamic at peak, then at 60% g the dynamic
-        # camber is still negative — the contact patch is slightly overloaded
-        # on the inner shoulder. This is PREFERRED because:
-        #   - More grip at partial g (mid-corner, transitions)
-        #   - Better stability (more resistance to further roll)
-        #   - Tyre wear is more even across the cornering range
-        #
-        # The optimal static camber accounts for the AVERAGE cornering load,
-        # not just peak. Using a weighted average across the cornering
-        # distribution (most time at 60-80% of peak g):
-        #   effective_roll = roll_at_peak * 0.75  (weighted average)
-        #   optimal = -(effective_roll * roll_gain) → this gives ~33% more
-        #   negative camber than the peak-only calculation.
-        #
-        # Additionally: GTP tyres have a rounded crown profile. More negative
-        # camber pushes the contact patch inward, using the stiffer shoulder
-        # compound. This adds ~0.3° of beneficial static camber beyond the
-        # kinematic calculation.
 
-        # The driver spends most cornering time at 60-80% of peak g
-        # (mid-corner, transitions, trail-braking). The tyre needs optimal
-        # camber at THIS load level, not at peak g.
-        #
-        # At the representative cornering load (70% peak g):
-        #   roll_representative = roll_at_peak * 0.70
-        #   camber_change = roll_representative * roll_gain
-        #   We want dynamic camber ≈ 0° at representative load:
-        #   optimal = -(roll_representative * roll_gain)
-        #
-        # At peak g, the dynamic camber will be MORE negative than 0°:
-        #   dynamic_at_peak = optimal + roll_at_peak * roll_gain
-        #   = -(0.70 * roll * gain) + roll * gain = 0.30 * roll * gain
-        #   This means ~0.4° positive at peak — acceptable, the tyre
-        #   inner shoulder is still loaded, and the slight positive gives
-        #   a wider contact patch at maximum load.
-        #
-        # Additionally: GTP tyres have a crowned profile. More negative
-        # camber engages the stiffer inner compound under load, which
-        # improves cornering stiffness at the cost of straight-line
-        # rolling resistance (negligible at racing speeds).
-
-        representative_g_fraction = 0.70
-        representative_roll = roll_deg * representative_g_fraction
-        optimal = -(representative_roll * roll_gain)
+        # At representative cornering (p95 lat_g):
+        #   camber_change = representative_roll * roll_gain
+        #   Want dynamic camber ≈ 0° at this load:
+        #   optimal = -(representative_roll * roll_gain)
+        optimal = -(representative_roll_deg * roll_gain)
 
         # Crown profile correction: the tyre's crown radius means the
         # contact patch shifts inward under negative camber. This is
@@ -342,15 +305,49 @@ class WheelGeometrySolver:
         geo = self.car.geometry
         peak_lat_g = self.track.peak_lat_g
 
-        # Body roll at peak lateral g
-        roll_deg = self._body_roll_at_g(peak_lat_g, k_roll_total_nm_deg)
+        # Representative cornering load for camber optimization.
+        #
+        # Pure p95 optimization gives maximum grip at typical cornering but
+        # suboptimal contact patch at peak load (corner apices). Pure peak
+        # optimization gives best grip at the limit but too much negative
+        # camber during moderate cornering (heat, drag, wear).
+        #
+        # The correct target depends on track character:
+        # - High kerb severity (Sebring): transient roll events exceed
+        #   steady-state, need more camber margin → weight toward peak
+        # - Smooth tracks: less transient roll → weight toward p95
+        #
+        # Blend: representative_g = p95 + kerb_weight * (peak - p95)
+        # kerb_weight = 0.3 (smooth) to 0.7 (heavy kerbs)
+        if self.track.lateral_g and self.track.lateral_g.get("p95"):
+            p95_lat_g = self.track.lateral_g["p95"]
+        else:
+            p95_lat_g = peak_lat_g * 0.47
 
-        # Optimal static camber
+        # Kerb severity: use number and intensity of kerb events
+        n_kerbs = len(self.track.kerb_events)
+        if n_kerbs > 10:
+            kerb_weight = 0.7   # heavy kerbing (Sebring, Monza chicanes)
+        elif n_kerbs > 5:
+            kerb_weight = 0.5   # moderate
+        else:
+            kerb_weight = 0.3   # smooth (Daytona, Le Mans)
+
+        representative_lat_g = p95_lat_g + kerb_weight * (peak_lat_g - p95_lat_g)
+
+        # Body roll at peak lateral g (for dynamic camber check at worst case)
+        roll_deg = self._body_roll_at_g(peak_lat_g, k_roll_total_nm_deg)
+        # Body roll at representative lateral g (for camber optimization)
+        representative_roll_deg = self._body_roll_at_g(
+            representative_lat_g, k_roll_total_nm_deg
+        )
+
+        # Optimal static camber — optimized for p95 cornering load
         front_camber = self._optimal_camber(
-            roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
+            representative_roll_deg, geo.front_roll_gain, geo.front_camber_baseline_deg
         )
         rear_camber = self._optimal_camber(
-            roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg
+            representative_roll_deg, geo.rear_roll_gain, geo.rear_camber_baseline_deg
         )
         # Use rear geometry range for rear camber
         r_min, r_max = geo.rear_camber_range_deg
@@ -424,10 +421,13 @@ class WheelGeometrySolver:
         ]
 
         notes = [
-            f"Body roll {roll_deg:.1f}° at peak {peak_lat_g:.2f}g. "
-            f"Front compensates {front_camber_change:+.1f}°, target dynamic ~0°.",
+            f"Representative cornering: {representative_lat_g:.2f}g "
+            f"(p95={p95_lat_g:.2f}g, peak={peak_lat_g:.2f}g, "
+            f"kerb_weight={kerb_weight:.1f}). "
+            f"Roll: {representative_roll_deg:.1f}° at representative, "
+            f"{roll_deg:.1f}° at peak.",
             "Tyre temperature spread diagnosis: inner hotter = correct camber. "
-            "If outer runs hotter → reduce negative camber by 0.2-0.3°.",
+            "If outer runs hotter -> reduce negative camber by 0.2-0.3 deg.",
             "BMW Vision tread conditioning (Sebring): fronts +2.4°C/lap, "
             "rears +3.2°C/lap. Full operating temp by lap 13-15 (fronts), 8-9 (rears).",
             "For sprint qualifying: add 0.3° more negative camber + 0.2mm extra "

@@ -161,7 +161,7 @@ class ARBSolution:
         if self.car_specific_notes:
             lines += ["", "  CAR-SPECIFIC NOTES"]
             for note in self.car_specific_notes:
-                lines.append(f"    • {note}")
+                lines.append(f"    - {note}")
         lines.append("===========================================================")
         return "\n".join(lines)
 
@@ -182,13 +182,20 @@ class ARBSolver:
         self.track = track
 
     def _corner_spring_roll_stiffness(
-        self, k_wheel_nmm: float, track_width_mm: float
+        self, k_spring_nmm: float, track_width_mm: float,
+        motion_ratio: float = 1.0,
     ) -> float:
         """Roll stiffness contribution from corner springs (N·m/deg).
 
-        K_roll = 2 * k_wheel (N/m) * (t_half)^2 [N·m/rad]
-               = 2 * k_wheel * (t_half)^2 / (pi/180) [N·m/deg]
+        The input k_spring_nmm may be SPRING rate (as reported in iRacing
+        garage) rather than WHEEL rate. The motion ratio converts:
+            k_wheel = k_spring * MR^2
+
+        Then roll stiffness:
+            K_roll = 2 * k_wheel (N/m) * (t_half)^2 [N·m/rad]
+                   = K_roll_rad * (pi/180) [N·m/deg]
         """
+        k_wheel_nmm = k_spring_nmm * (motion_ratio ** 2)
         k_wheel_nm = k_wheel_nmm * 1000  # N/mm → N/m
         t_half_m = (track_width_mm / 2) / 1000  # mm → m
         k_roll_rad = 2.0 * k_wheel_nm * (t_half_m ** 2)  # N·m/rad
@@ -241,11 +248,16 @@ class ARBSolver:
         arb = self.car.arb
 
         # Roll stiffness from corner springs
+        # Front torsion bar: MR already baked into wheel rate from C*OD^4
+        # Rear coil spring: apply MR^2 to convert spring rate to wheel rate
+        cs = self.car.corner_spring
         k_springs_front = self._corner_spring_roll_stiffness(
-            front_wheel_rate_nmm, arb.track_width_front_mm
+            front_wheel_rate_nmm, arb.track_width_front_mm,
+            motion_ratio=cs.front_motion_ratio,
         )
         k_springs_rear = self._corner_spring_roll_stiffness(
-            rear_wheel_rate_nmm, arb.track_width_rear_mm
+            rear_wheel_rate_nmm, arb.track_width_rear_mm,
+            motion_ratio=cs.rear_motion_ratio,
         )
 
         # Target LLTD (OptimumG: static front weight + 5%)
@@ -291,8 +303,8 @@ class ARBSolver:
         # RARB sensitivity: ΔLLTD per blade step at the chosen rear size
         k_rarb_step_plus = self.car.arb.rear_roll_stiffness(best_size, min(best_blade + 1, arb.rear_blade_count))
         k_rarb_step_minus = self.car.arb.rear_roll_stiffness(best_size, max(best_blade - 1, 1))
-        lltd_plus = self._lltd_from_roll_stiffness(k_front - k_rarb + k_rarb_step_plus, k_rear - k_rarb + k_rarb_step_plus)
-        lltd_minus = self._lltd_from_roll_stiffness(k_front - k_rarb + k_rarb_step_minus, k_rear - k_rarb + k_rarb_step_minus)
+        lltd_plus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_plus)
+        lltd_minus = self._lltd_from_roll_stiffness(k_front, k_rear - k_rarb + k_rarb_step_minus)
         sensitivity = (lltd_plus - lltd_minus) / 2
 
         # Live blade range for slow vs fast corners
@@ -342,8 +354,8 @@ class ARBSolver:
             "Use RARB as the only live balance variable.",
             f"Rear ARB '{best_size}' provides the correct blade range. "
             "If blade runs out of range, change ARB diameter — not FARB.",
-            "Stiffer RARB → shifts load transfer rear → front GAINS grip via LLTD → "
-            "sharpens front-end bite. Softer RARB → stable/planted rear.",
+            "Stiffer RARB -> shifts load transfer rear -> front GAINS grip via LLTD -> "
+            "sharpens front-end bite. Softer RARB -> stable/planted rear.",
             "Cold tyre out-lap: RARB at blade 1 to prevent snap oversteer before tyres are up to temperature.",
         ]
 

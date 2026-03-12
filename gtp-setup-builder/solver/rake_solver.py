@@ -219,8 +219,12 @@ class RakeSolver:
         static_front = max(static_front, self.car.min_front_rh_static)
         static_rear = max(static_rear, self.car.min_rear_rh_static)
 
-        front_pushrod = self.car.pushrod.front_offset_for_rh(static_front)
-        rear_pushrod = self.car.pushrod.rear_offset_for_rh(static_rear)
+        # Snap pushrods to 0.5mm increments (iRacing garage constraint)
+        front_pushrod = round(self.car.pushrod.front_offset_for_rh(static_front) * 2) / 2
+        rear_pushrod = round(self.car.pushrod.rear_offset_for_rh(static_rear) * 2) / 2
+        # Recompute actual static RH from snapped pushrod
+        static_front = self.car.pushrod.front_rh_for_offset(front_pushrod)
+        static_rear = self.car.pushrod.rear_rh_for_offset(rear_pushrod)
 
         front_min_p99 = actual_front_dyn - front_excursion_p99
         vb_margin = front_min_p99 - self.car.vortex_burst_threshold_mm

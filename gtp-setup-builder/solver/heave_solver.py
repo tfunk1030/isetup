@@ -108,8 +108,8 @@ class HeaveSolution:
             f"    Binding constraint:  {self.rear_binding_constraint}",
             "",
             "  PERCH OFFSETS (baseline reference)",
-            f"    Front:  {self.perch_offset_front_mm:6.1f} mm",
-            f"    Rear:   {self.perch_offset_rear_mm:6.1f} mm",
+            f"    Front:  {self.perch_offset_front_mm:6.0f} mm",
+            f"    Rear:   {self.perch_offset_rear_mm:6.0f} mm",
         ]
 
         if self.safety_checks:
@@ -373,7 +373,7 @@ class HeaveSolver:
             rear_bottoming_margin_mm=round(dynamic_rear_rh_mm - rear_exc, 1),
             rear_sigma_at_rate_mm=round(rear_sigma, 1),
             rear_binding_constraint=rear_binding,
-            perch_offset_front_mm=hsm.perch_offset_front_baseline_mm,
-            perch_offset_rear_mm=hsm.perch_offset_rear_baseline_mm,
+            perch_offset_front_mm=round(hsm.perch_offset_front_baseline_mm),
+            perch_offset_rear_mm=round(hsm.perch_offset_rear_baseline_mm),
             safety_checks=safety_checks,
         )
